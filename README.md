@@ -168,16 +168,11 @@ Numeric fields keep the raw value; `*_hex` and name fields are derived from it.
 
 ## Known limitations
 
-- Reading a descriptor requires opening the pipe, as does every access test. Each open connects to a listening server instance; the server process sees a client connect and disconnect. pipescry never reads or writes pipe data.
-- A pipe whose instances are all connected returns busy. pipescry does not wait for an instance, so a busy pipe has no descriptor.
-- Enumeration lists pipes that have a server instance at query time. Samba and some hardened hosts refuse the IPC$ listing; supply names with `--names-file`.
-- Samba returns `STATUS_NOT_SUPPORTED` for pipe security queries; those are recorded as `unavailable`.
-- Remote SIDs are named from a built-in well-known table only. No LSA lookup is performed. Local mode uses `LookupAccountSid`.
-- Indicators and open results do not establish effective access for other principals or exploitability. Indicators ignore deny ACE ordering, privileges, integrity labels, and checks the server process performs after connecting.
-- Open tests reflect only the scanning identity.
-- SACLs and mandatory labels are not requested.
-- Only NTLM authentication is wired. Kerberos is not exposed.
-- DNS: the only lookup is for `--target` (and a proxy given by name), made by the local resolver unless `socks4a` or `socks5h` is used. NTLM itself does no DNS.
-- Not yet validated on real Windows. Under Wine, local descriptor collection works, but Wine lacks NPFS listing and pipe access checks. See `docs/testing.md` for the lab runbook.
+- Every open, including the one that reads the descriptor, connects to a server instance. The server process can see the connect and disconnect.
+- A pipe whose instances are all busy returns `busy` and has no descriptor. pipescry does not wait for a free instance.
+- Samba and some hardened hosts refuse the IPC$ listing; use `--names` or `--names-file`. Samba also does not support pipe security queries, which are recorded as `unavailable`.
+- Remote mode names SIDs from a built-in well-known table only; it does not query LSA.
+- Indicators are DACL facts, not effective access. Open tests reflect only the scanning identity.
+- Only NTLM authentication is supported; Kerberos is not.
 
 Implementation notes are in [`docs/`](docs/).
