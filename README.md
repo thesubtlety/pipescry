@@ -13,6 +13,10 @@ pipescry records Windows named-pipe security descriptors and handle-open results
 
 Binaries are static (`CGO_ENABLED=0`). No SMB client, Python, .NET, or agent is needed on either end.
 
+## Install
+
+Download a binary from [Releases](https://github.com/thesubtlety/pipescry/releases) and check it against `SHA256SUMS`.
+
 ## Build
 
 Requires Go 1.24 or newer (`go.mod` selects the toolchain).
@@ -22,6 +26,8 @@ Requires Go 1.24 or newer (`go.mod` selects the toolchain).
 go build -o pipescry ./cmd/pipescry
 go test ./...
 ```
+
+To release, set `version` in `cmd/pipescry/main.go` and push a matching tag (`git tag v1.0.0 && git push origin v1.0.0`). The release workflow runs the tests, builds all four binaries, and attaches them with `SHA256SUMS` to a GitHub release.
 
 ## Usage
 
@@ -49,6 +55,44 @@ Local scan on Windows, showing Everyone ACEs whose mask contains `FILE_WRITE_DAT
 
 ```
 pipescry.exe scan --local --access-test --json local.json --principal S-1-1-0 --permission FILE_WRITE_DATA
+```
+
+## Example output
+
+Remote scan through a SOCKS proxy, summary only:
+
+```
+$ pipescry scan --proxy socks5://127.0.0.1:1080 --target 10.10.10.10 --username contoso\\alex --password-env PIPESCRY_PASS --summary
+connecting to 10.10.10.10:445 via socks5://127.0.0.1:1080
+scanned 37 pipes on 10.10.10.10
+pipescry     remote scan of 10.10.10.10
+identity     contoso\alex (ntlm)
+transport    SMB 3.1.1 to 10.10.10.10:445\IPC$ via socks5://127.0.0.1:1080, signing required, cipher negotiated AES-128-CCM
+started      2026-11-11T21:42:16Z, duration 1.877s
+pipes        37 total, 37 enumerated, 0 from names list; enumeration complete
+descriptors  collected 15, unavailable 0, failed 22, unparsed 0
+open tests   allowed 0, denied 0, busy 0, error 0, unsupported 0, not_tested 111
+indicators   broad_principal_grant 29, create_pipe_instance_grant 1, full_control_grant 9
+```
+
+One pipe from the same scan with `--access-test`:
+
+```
+atsvc  [enumeration]  rpc=MS-TSCH  instances=3
+  owner  S-1-5-18 NT AUTHORITY\SYSTEM
+  group  S-1-5-18 NT AUTHORITY\SYSTEM
+  dacl   present, 4 ACEs  source: SMB2 QUERY_INFO/SECURITY, opened with 0x00020000, control 0x8004
+     0 ALLOW S-1-1-0 Everyone                                                                   0x0012019B FILE_READ_DATA|FILE_WRITE_DATA|FILE_READ_EA|FILE_WRITE_EA|FILE_READ_ATTRIBUTES|FILE_WRITE_ATTRIBUTES|READ_CONTROL|SYNCHRONIZE
+     1 ALLOW S-1-5-7 NT AUTHORITY\ANONYMOUS LOGON                                               0x0012019B FILE_READ_DATA|FILE_WRITE_DATA|FILE_READ_EA|FILE_WRITE_EA|FILE_READ_ATTRIBUTES|FILE_WRITE_ATTRIBUTES|READ_CONTROL|SYNCHRONIZE
+     2 ALLOW S-1-5-80-4125092361-1567024937-842823819-2091237918-836075745 NT SERVICE\<service> 0x001F01FF FULL_CONTROL
+     3 ALLOW S-1-3-4 OWNER RIGHTS                                                               0x00020000 READ_CONTROL
+  indicator broad_principal_grant ace 0: allow ACE 0x0012019B for broad principal S-1-1-0
+  indicator broad_principal_grant ace 1: allow ACE 0x0012019B for broad principal S-1-5-7
+  indicator full_control_grant ace 2: allow ACE mask 0x001F01FF maps to FILE_ALL_ACCESS
+  open   source: SMB2 CREATE then close, as contoso\alex
+    READ_CONTROL     0x00020000  allowed STATUS_SUCCESS (0x00000000)
+    FILE_READ_DATA   0x00000001  allowed STATUS_SUCCESS (0x00000000)
+    FILE_WRITE_DATA  0x00000002  allowed STATUS_SUCCESS (0x00000000)
 ```
 
 ## Flags

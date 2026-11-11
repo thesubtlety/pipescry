@@ -20,7 +20,7 @@ import (
 	"github.com/thesubtlety/pipescry/internal/scanner"
 )
 
-var version = "0.1.0-dev"
+var version = "1.0.0"
 
 const (
 	exitOK    = 0
