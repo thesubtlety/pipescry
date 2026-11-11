@@ -94,7 +94,7 @@ func WriteText(w io.Writer, r *model.Report, opt TextOptions) {
 			shown++
 		}
 	}
-	if opt.Filter.Active() || opt.Filter.Evidence != EvidenceAll {
+	if opt.Filter.Active() || opt.Filter.Evidence != EvidenceAll || opt.Filter.RPC != RPCAny {
 		p.f("\n%d of %d pipes match display filters\n", shown, len(r.Pipes))
 	}
 }
@@ -201,6 +201,9 @@ func openSource(m model.Mode) string {
 
 func (p *printer) pipe(r *model.Report, pp *model.Pipe) bool {
 	fl := p.opt.Filter
+	if !fl.MatchPipe(pp) {
+		return false
+	}
 	var aces []model.ACE
 	var tests []model.AccessTest
 	if pp.Security.Descriptor != nil {
@@ -221,6 +224,13 @@ func (p *printer) pipe(r *model.Report, pp *model.Pipe) bool {
 	}
 
 	head := fmt.Sprintf("\n%s  [%s]", p.c(cBold+cCyan, pp.Name), strings.Join(pp.Sources, ","))
+	if len(pp.RPCProtocols) > 0 {
+		ids := make([]string, len(pp.RPCProtocols))
+		for i, rp := range pp.RPCProtocols {
+			ids[i] = rp.ID
+		}
+		head += "  " + p.c(cDim, "rpc="+strings.Join(ids, ","))
+	}
 	if pp.CurrentInstances != nil {
 		head += fmt.Sprintf("  instances=%d", *pp.CurrentInstances)
 	}

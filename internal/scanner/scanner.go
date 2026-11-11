@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/thesubtlety/pipescry/internal/model"
+	"github.com/thesubtlety/pipescry/internal/rpcdb"
 	"github.com/thesubtlety/pipescry/internal/security"
 )
 
@@ -127,7 +128,7 @@ func Run(ctx context.Context, c Collector, cfg Config) *model.Report {
 		key := strings.ToLower(name)
 		p, ok := pipes[key]
 		if !ok {
-			p = &model.Pipe{Name: name, Sources: []string{}}
+			p = &model.Pipe{Name: name, Sources: []string{}, RPCProtocols: rpcdb.Lookup(name)}
 			pipes[key] = p
 			order = append(order, key)
 		}

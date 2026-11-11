@@ -1,0 +1,200 @@
+{
+  "atsvc": [
+    {
+      "id": "MS-TSCH",
+      "name": "Task Scheduler Service Remoting Protocol"
+    }
+  ],
+  "cert": [
+    {
+      "id": "MS-ICPR",
+      "name": "ICertPassage Remote Protocol"
+    }
+  ],
+  "dhcpserver": [
+    {
+      "id": "MS-DHCPM",
+      "name": "Dynamic Host Configuration Protocol (DHCP) Server Management Protocol"
+    }
+  ],
+  "dnsserver": [
+    {
+      "id": "MS-DNSP",
+      "name": "Domain Name Service (DNS) Server Management"
+    }
+  ],
+  "efsrpc": [
+    {
+      "id": "MS-EFSR",
+      "name": "Encrypting File System Remote (EFSRPC) Protocol"
+    }
+  ],
+  "eventlog": [
+    {
+      "id": "MS-EVEN",
+      "name": "EventLog Remoting Protocol"
+    }
+  ],
+  "fssagentrpc": [
+    {
+      "id": "MS-FSRVP",
+      "name": "File Server Remote VSS Protocol"
+    }
+  ],
+  "inetinfo": [
+    {
+      "id": "MS-IRP",
+      "name": "Internet Information Services (IIS) Inetinfo Remote Protocol"
+    }
+  ],
+  "initshutdown": [
+    {
+      "id": "MS-RSP",
+      "name": "Remote Shutdown Protocol"
+    }
+  ],
+  "locator": [
+    {
+      "id": "MS-RPCL",
+      "name": "Remote Procedure Call Location Services Extensions"
+    }
+  ],
+  "lsarpc": [
+    {
+      "id": "MS-DSSP",
+      "name": "Directory Services Setup Remote Protocol"
+    },
+    {
+      "id": "MS-EFSR",
+      "name": "Encrypting File System Remote (EFSRPC) Protocol"
+    },
+    {
+      "id": "MS-LSAT",
+      "name": "Local Security Authority (Translation Methods) Remote"
+    }
+  ],
+  "lsass": [
+    {
+      "id": "MS-RAA",
+      "name": "Remote Authorization API Protocol"
+    },
+    {
+      "id": "MS-SAMR",
+      "name": "Security Account Manager (SAM) Remote Protocol (Client-to-Server)"
+    }
+  ],
+  "netdfs": [
+    {
+      "id": "MS-DFSNM",
+      "name": "Distributed File System (DFS): Namespace Management Protocol"
+    }
+  ],
+  "netlogon": [
+    {
+      "id": "MS-NRPC",
+      "name": "Netlogon Remote Protocol"
+    }
+  ],
+  "ntsvcs": [
+    {
+      "id": "MS-BKRP",
+      "name": "BackupKey Remote Protocol"
+    },
+    {
+      "id": "MS-DLTW",
+      "name": "Distributed Link Tracking: Workstation Protocol"
+    }
+  ],
+  "protected_storage": [
+    {
+      "id": "MS-BKRP",
+      "name": "BackupKey Remote Protocol"
+    }
+  ],
+  "router": [
+    {
+      "id": "MS-RRASM",
+      "name": "Routing and Remote Access Server (RRAS) Management Protocol"
+    }
+  ],
+  "samr": [
+    {
+      "id": "MS-SAMR",
+      "name": "Security Account Manager (SAM) Remote Protocol (Client-to-Server)"
+    }
+  ],
+  "sharefax": [
+    {
+      "id": "MS-FAX",
+      "name": "Fax Server and Client Remote Protocol"
+    }
+  ],
+  "spoolss": [
+    {
+      "id": "MS-RPRN",
+      "name": "Print System Remote Protocol"
+    }
+  ],
+  "srvsvc": [
+    {
+      "id": "MS-SRVS",
+      "name": "Server Service Remote Protocol"
+    }
+  ],
+  "svcctl": [
+    {
+      "id": "MS-SCMR",
+      "name": "Service Control Manager Remote Protocol"
+    }
+  ],
+  "tapsrv": [
+    {
+      "id": "MS-TRP",
+      "name": "Telephony Remote Protocol"
+    }
+  ],
+  "trkwks": [
+    {
+      "id": "MS-DLTW",
+      "name": "Distributed Link Tracking: Workstation Protocol"
+    }
+  ],
+  "w32time": [
+    {
+      "id": "MS-W32T",
+      "name": "W32Time Remote Protocol"
+    }
+  ],
+  "w32time_alt": [
+    {
+      "id": "MS-W32T",
+      "name": "W32Time Remote Protocol"
+    }
+  ],
+  "winreg": [
+    {
+      "id": "MS-PCQ",
+      "name": "Performance Counter Query Protocol"
+    },
+    {
+      "id": "MS-RRP",
+      "name": "Windows Remote Registry Protocol"
+    },
+    {
+      "id": "MS-RSP",
+      "name": "Remote Shutdown Protocol"
+    }
+  ],
+  "winspipe": [
+    {
+      "id": "MS-RAIW",
+      "name": "Remote Administrative Interface: WINS"
+    }
+  ],
+  "wkssvc": [
+    {
+      "id": "MS-WKST",
+      "name": "Workstation Service Remote Protocol"
+    }
+  ]
+}

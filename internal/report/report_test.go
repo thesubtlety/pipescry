@@ -57,7 +57,7 @@ func fixture(t *testing.T) *model.Report {
 
 func render(t *testing.T, r *model.Report, principals, perms []string, evidence string, results []string) string {
 	t.Helper()
-	f, err := NewFilter(principals, perms, evidence, results)
+	f, err := NewFilter(principals, perms, evidence, results, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,11 +115,39 @@ func TestFilterResultAndEvidence(t *testing.T) {
 	if strings.Contains(out, "owner") || aceLine.MatchString(out) {
 		t.Fatalf("--evidence open must hide DACL evidence:\n%s", out)
 	}
-	if _, err := NewFilter(nil, nil, "acl", nil); err == nil {
+	if _, err := NewFilter(nil, nil, "acl", nil, ""); err == nil {
 		t.Fatal("accepted bad evidence")
 	}
-	if _, err := NewFilter(nil, nil, "", []string{"maybe"}); err == nil {
+	if _, err := NewFilter(nil, nil, "", []string{"maybe"}, ""); err == nil {
 		t.Fatal("accepted bad result")
+	}
+}
+
+func TestFilterRPC(t *testing.T) {
+	r := fixture(t)
+	r.Pipes[1].RPCProtocols = []model.RPCProtocol{{ID: "MS-RPRN", Name: "Print System Remote Protocol"}}
+	show := func(rpc string, extra ...string) string {
+		f, err := NewFilter(extra, nil, "", nil, rpc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var b bytes.Buffer
+		WriteText(&b, r, TextOptions{Filter: f})
+		return b.String()
+	}
+	out := show("known")
+	if !strings.Contains(out, "beta") || !strings.Contains(out, "rpc=MS-RPRN") || strings.Contains(out, "alpha") || strings.Contains(out, "gamma") {
+		t.Fatalf("--rpc known:\n%s", out)
+	}
+	out = show("UNKNOWN")
+	if strings.Contains(out, "beta") || !strings.Contains(out, "alpha") || !strings.Contains(out, "gamma") {
+		t.Fatalf("--rpc unknown:\n%s", out)
+	}
+	if out = show("unknown", "everyone"); !strings.Contains(out, "gamma") || strings.Contains(out, "beta") {
+		t.Fatalf("--rpc must AND with --principal:\n%s", out)
+	}
+	if _, err := NewFilter(nil, nil, "", nil, "maybe"); err == nil {
+		t.Fatal("accepted bad rpc")
 	}
 }
 

@@ -24,10 +24,24 @@ type Filter struct {
 	Permissions []uint32
 	Evidence    Evidence
 	Results     []model.Result
+	RPC         RPC
 }
 
-func NewFilter(principals, permissions []string, evidence string, results []string) (Filter, error) {
-	f := Filter{Principals: principals, Evidence: Evidence(strings.ToLower(evidence))}
+type RPC string
+
+const (
+	RPCAny     RPC = ""
+	RPCKnown   RPC = "known"
+	RPCUnknown RPC = "unknown"
+)
+
+func NewFilter(principals, permissions []string, evidence string, results []string, rpc string) (Filter, error) {
+	f := Filter{Principals: principals, Evidence: Evidence(strings.ToLower(evidence)), RPC: RPC(strings.ToLower(rpc))}
+	switch f.RPC {
+	case RPCAny, RPCKnown, RPCUnknown:
+	default:
+		return f, fmt.Errorf("--rpc %q: want known or unknown", rpc)
+	}
 	if f.Evidence == "" {
 		f.Evidence = EvidenceAll
 	}
@@ -61,6 +75,17 @@ func NewFilter(principals, permissions []string, evidence string, results []stri
 // hides sections.
 func (f Filter) Active() bool {
 	return len(f.Principals) > 0 || len(f.Permissions) > 0 || len(f.Results) > 0
+}
+
+// MatchPipe applies the pipe-level --rpc filter.
+func (f Filter) MatchPipe(p *model.Pipe) bool {
+	switch f.RPC {
+	case RPCKnown:
+		return len(p.RPCProtocols) > 0
+	case RPCUnknown:
+		return len(p.RPCProtocols) == 0
+	}
+	return true
 }
 
 func (f Filter) ShowDACL() bool { return f.Evidence != EvidenceOpen && len(f.Results) == 0 }

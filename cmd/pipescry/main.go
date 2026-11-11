@@ -108,7 +108,7 @@ type scanFlags struct {
 	jsonPath, format                                                          string
 	summary, quiet, noColor, verbose                                          bool
 	principals, permissions, results                                          listFlag
-	evidence                                                                  string
+	evidence, rpc                                                             string
 }
 
 func scan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -143,6 +143,7 @@ func scan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.Var(&f.principals, "principal", "display only ACEs whose trustee, or tests whose identity, matches this SID or name; repeatable")
 	fs.Var(&f.permissions, "permission", "display only ACEs (allow or deny) whose mask, or tests whose request, contains this right after generic mapping (e.g. FILE_WRITE_DATA, WRITE_DAC, 0x4); NULL DACLs always match; repeatable")
 	fs.StringVar(&f.evidence, "evidence", "all", "display evidence type: all, dacl, or open")
+	fs.StringVar(&f.rpc, "rpc", "", "display only pipes whose name is (known) or is not (unknown) a well-known MS-RPC pipe")
 	fs.Var(&f.results, "result", "display only open tests with this result: allowed, denied, busy, error, unsupported, not_tested; repeatable")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, `Usage: pipescry scan (--target HOST | --local) [flags]
@@ -167,7 +168,7 @@ Flags:
 		return exitUsage
 	}
 
-	filter, err := report.NewFilter(f.principals, f.permissions, f.evidence, f.results)
+	filter, err := report.NewFilter(f.principals, f.permissions, f.evidence, f.results, f.rpc)
 	if err != nil {
 		fmt.Fprintf(stderr, "scan: %v\n", err)
 		return exitUsage

@@ -4,7 +4,7 @@ package model
 
 import "time"
 
-const SchemaVersion = "1.0"
+const SchemaVersion = "1.1"
 
 type Result string
 
@@ -122,12 +122,20 @@ type OpError struct {
 type Pipe struct {
 	Name             string           `json:"name"`
 	Sources          []string         `json:"sources"`
+	RPCProtocols     []RPCProtocol    `json:"rpc_protocols"`
 	ObservedAt       time.Time        `json:"observed_at"`
 	CurrentInstances *uint64          `json:"current_instances"`
 	MaxInstances     *int64           `json:"max_instances"`
 	Security         SecurityEvidence `json:"security"`
 	AccessTests      []AccessTest     `json:"access_tests"`
 	Indicators       []Indicator      `json:"indicators"`
+}
+
+// RPCProtocol is a well-known MS-RPC protocol matched by pipe name only; the
+// scanner does not bind to confirm it.
+type RPCProtocol struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type DescriptorState string

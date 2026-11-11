@@ -20,7 +20,8 @@ func ReadJSONFile(path string) (*model.Report, error) {
 	if err := json.Unmarshal(b, &r); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if r.SchemaVersion != model.SchemaVersion {
+	// 1.1 only added pipes[].rpc_protocols, which compare does not read.
+	if r.SchemaVersion != model.SchemaVersion && r.SchemaVersion != "1.0" {
 		return nil, fmt.Errorf("%s: schema_version %q, want %q", path, r.SchemaVersion, model.SchemaVersion)
 	}
 	return &r, nil

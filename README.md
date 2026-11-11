@@ -83,6 +83,7 @@ pipescry.exe scan --local --access-test --json local.json --principal S-1-1-0 --
 | `--principal X` | | Display ACEs whose trustee, or tests whose identity, matches a SID, full name, or account name. Repeatable (OR). |
 | `--permission R` | | Display ACEs whose generic-mapped mask contains R, or tests whose request contains R. Accepts right names, `FULL_CONTROL`, `FILE_GENERIC_*`, `FILE_APPEND_DATA` (= bit 0x4), or a number. Repeatable (OR). Inherit-only ACEs never match. Pipes with a NULL or absent DACL match every `--principal` and `--permission`. |
 | `--evidence all\|dacl\|open` | all | Display DACL evidence, open-test evidence, or both. |
+| `--rpc known\|unknown` | | Display only pipes whose name is (`known`) or is not (`unknown`) a well-known MS-RPC pipe such as `spoolss` or `lsarpc`. `unknown` hides the standard Windows RPC pipes. |
 | `--result R` | | Display open tests with result R. Repeatable (OR). Implies open evidence only; rejected with `--evidence dacl`. |
 
 Different filter flags combine with AND. Filters change only the text display; JSON output and summary counts always cover everything collected.
@@ -93,7 +94,7 @@ Passwords are never written to output or logs. Exit status: 0 scan completed (in
 
 ## Output schema
 
-Top level (`schema_version` `1.0`):
+Top level (`schema_version` `1.1`):
 
 | Field | Content |
 |---|---|
@@ -109,6 +110,7 @@ Each pipe:
 | Field | Content |
 |---|---|
 | `name`, `sources` | `enumeration` or `names_list`. |
+| `rpc_protocols[]` | Well-known MS-RPC protocols (`id`, `name`) served on this pipe name, from the [rpc-interfaces](https://github.com/jcspencer/rpc-interfaces) database. Matched by name only; pipescry does not bind to confirm. Empty for other pipes. |
 | `current_instances`, `max_instances` | From the directory entry; `null` when not reported. |
 | `security.state` | `collected`, `unavailable` (server does not support the query), `failed`, or `unparsed`. |
 | `security.raw_hex` | Descriptor bytes as returned, when any were returned. |
