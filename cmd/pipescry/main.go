@@ -97,18 +97,18 @@ func (l *listFlag) Set(v string) error {
 }
 
 type scanFlags struct {
-	target, username, domain, password, passwordEnv, hashEnv, proxy string
-	port                                                            int
-	passwordStdin, anonymous, local                                 bool
-	namesFile                                                       string
-	names                                                           listFlag
-	noEnumerate, accessTest                                         bool
-	timeout                                                         time.Duration
-	concurrency                                                     int
-	jsonPath, format                                                string
-	summary, quiet, noColor, verbose                                bool
-	principals, permissions, results                                listFlag
-	evidence                                                        string
+	target, username, domain, password, passwordEnv, ntHash, ntHashEnv, proxy string
+	port                                                                      int
+	passwordStdin, anonymous, local                                           bool
+	namesFile                                                                 string
+	names                                                                     listFlag
+	noEnumerate, accessTest                                                   bool
+	timeout                                                                   time.Duration
+	concurrency                                                               int
+	jsonPath, format                                                          string
+	summary, quiet, noColor, verbose                                          bool
+	principals, permissions, results                                          listFlag
+	evidence                                                                  string
 }
 
 func scan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -124,7 +124,8 @@ func scan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.StringVar(&f.password, "password", "", "password; visible in process listings and shell history, prefer --password-env")
 	fs.StringVar(&f.passwordEnv, "password-env", "", "read the password from this environment variable")
 	fs.BoolVar(&f.passwordStdin, "password-stdin", false, "read the password from the first line of stdin")
-	fs.StringVar(&f.hashEnv, "hash-env", "", "read a hex NT hash from this environment variable instead of a password")
+	fs.StringVar(&f.ntHash, "nt-hash", "", "32-char hex NT hash for pass-the-hash; visible in process listings and shell history, prefer --nt-hash-env")
+	fs.StringVar(&f.ntHashEnv, "nt-hash-env", "", "read a hex NT hash from this environment variable instead of a password")
 	fs.BoolVar(&f.anonymous, "anonymous", false, "use an anonymous (null) NTLM session")
 	fs.BoolVar(&f.local, "local", false, "scan the local NPFS with Win32 APIs (Windows only)")
 	fs.StringVar(&f.namesFile, "names-file", "", "file with one pipe name per line; '#' starts a comment")
@@ -285,7 +286,7 @@ func validate(f *scanFlags) error {
 		return errors.New("--local and --target are mutually exclusive")
 	case !f.local && f.target == "":
 		return errors.New("one of --target or --local is required")
-	case f.local && (f.username != "" || f.anonymous || f.password != "" || f.passwordEnv != "" || f.hashEnv != "" || f.passwordStdin):
+	case f.local && (f.username != "" || f.anonymous || f.password != "" || f.passwordEnv != "" || f.ntHash != "" || f.ntHashEnv != "" || f.passwordStdin):
 		return errors.New("credential flags apply only to --target; --local uses the current process token")
 	case f.local && f.proxy != "":
 		return errors.New("--proxy applies only to --target")
@@ -313,7 +314,7 @@ func credentials(f *scanFlags, stdin io.Reader) (remote.Options, error) {
 		opt.Proxy = p
 	}
 	if f.anonymous {
-		if f.username != "" || f.password != "" || f.passwordEnv != "" || f.hashEnv != "" || f.passwordStdin {
+		if f.username != "" || f.password != "" || f.passwordEnv != "" || f.ntHash != "" || f.ntHashEnv != "" || f.passwordStdin {
 			return opt, errors.New("--anonymous cannot be combined with credentials")
 		}
 		opt.Anonymous = true
@@ -334,13 +335,13 @@ func credentials(f *scanFlags, stdin io.Reader) (remote.Options, error) {
 	opt.User = user
 
 	sources := 0
-	for _, b := range []bool{f.password != "", f.passwordEnv != "", f.passwordStdin, f.hashEnv != ""} {
+	for _, b := range []bool{f.password != "", f.passwordEnv != "", f.passwordStdin, f.ntHash != "", f.ntHashEnv != ""} {
 		if b {
 			sources++
 		}
 	}
 	if sources != 1 {
-		return opt, errors.New("exactly one of --password, --password-env, --password-stdin, or --hash-env is required with --username")
+		return opt, errors.New("exactly one of --password, --password-env, --password-stdin, --nt-hash, or --nt-hash-env is required with --username")
 	}
 	switch {
 	case f.password != "":
@@ -357,18 +358,35 @@ func credentials(f *scanFlags, stdin io.Reader) (remote.Options, error) {
 			return opt, fmt.Errorf("--password-stdin: read stdin: %w", err)
 		}
 		opt.Password = strings.TrimRight(line, "\r\n")
-	case f.hashEnv != "":
-		v, ok := os.LookupEnv(f.hashEnv)
-		if !ok {
-			return opt, fmt.Errorf("--hash-env: environment variable %s is not set", f.hashEnv)
+	case f.ntHash != "":
+		h, err := decodeNTHash(f.ntHash)
+		if err != nil {
+			return opt, errors.New("--nt-hash is not a 32-character hex NT hash")
 		}
-		h, err := hex.DecodeString(strings.TrimSpace(v))
-		if err != nil || len(h) != 16 {
-			return opt, fmt.Errorf("--hash-env: %s does not hold a 32-character hex NT hash", f.hashEnv)
+		opt.NTHash = h
+	case f.ntHashEnv != "":
+		v, ok := os.LookupEnv(f.ntHashEnv)
+		if !ok {
+			return opt, fmt.Errorf("--nt-hash-env: environment variable %s is not set", f.ntHashEnv)
+		}
+		h, err := decodeNTHash(v)
+		if err != nil {
+			return opt, fmt.Errorf("--nt-hash-env: %s does not hold a 32-character hex NT hash", f.ntHashEnv)
 		}
 		opt.NTHash = h
 	}
+
 	return opt, nil
+}
+
+// decodeNTHash parses a 32-character hex NT hash. It never includes the input
+// in the error, so a malformed secret is not echoed.
+func decodeNTHash(s string) ([]byte, error) {
+	h, err := hex.DecodeString(strings.TrimSpace(s))
+	if err != nil || len(h) != 16 {
+		return nil, errors.New("not a 32-character hex NT hash")
+	}
+	return h, nil
 }
 
 func readNames(path string) ([]string, error) {

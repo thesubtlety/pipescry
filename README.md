@@ -66,7 +66,8 @@ pipescry.exe scan --local --access-test --json local.json --principal S-1-1-0 --
 | `--password P` | | Password. Visible in process listings and shell history; prefer `--password-env`. |
 | `--password-env VAR` | | Read the password from an environment variable. |
 | `--password-stdin` | | Read the password from the first line of stdin. |
-| `--hash-env VAR` | | Read a 32-hex-character NT hash from an environment variable. |
+| `--nt-hash HEX` | | 32-hex-character NT hash for pass-the-hash. Visible in process listings; prefer `--nt-hash-env`. |
+| `--nt-hash-env VAR` | | Read a 32-hex-character NT hash from an environment variable. |
 | `--anonymous` | | Anonymous NTLM session. |
 | `--names a,b` | | Pipe names to scan in addition to enumeration. Repeatable. |
 | `--names-file PATH` | | One name per line; `#` starts a comment. `\\.\pipe\x` and `\\host\pipe\x` forms are accepted. |

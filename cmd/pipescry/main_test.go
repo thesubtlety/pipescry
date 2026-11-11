@@ -66,12 +66,17 @@ func TestCredentials(t *testing.T) {
 	if err != nil || o.Domain != "corp.local" || o.User != "bob" || o.Password != "s3cret" {
 		t.Fatalf("%+v %v", o, err)
 	}
-	f = scanFlags{target: "h", username: "carol", hashEnv: "PS_TEST_HASH"}
+	f = scanFlags{target: "h", username: "carol", ntHashEnv: "PS_TEST_HASH"}
 	o, err = credentials(&f, nil)
 	if err != nil || len(o.NTHash) != 16 || o.Password != "" {
 		t.Fatalf("%+v %v", o, err)
 	}
-	f = scanFlags{target: "h", username: "dave", passwordEnv: "PS_TEST_PASS", hashEnv: "PS_TEST_HASH"}
+	f = scanFlags{target: "h", username: "erin", ntHash: "8846F7EAEE8FB117AD06BDD830B7586C"}
+	o, err = credentials(&f, nil)
+	if err != nil || len(o.NTHash) != 16 || o.Password != "" {
+		t.Fatalf("--nt-hash: %+v %v", o, err)
+	}
+	f = scanFlags{target: "h", username: "dave", passwordEnv: "PS_TEST_PASS", ntHashEnv: "PS_TEST_HASH"}
 	if _, err := credentials(&f, nil); err == nil {
 		t.Fatal("accepted two secret sources")
 	}
@@ -80,9 +85,13 @@ func TestCredentials(t *testing.T) {
 		t.Fatal("accepted conflicting domains")
 	}
 	t.Setenv("PS_TEST_HASH", "zz")
-	f = scanFlags{target: "h", username: "carol", hashEnv: "PS_TEST_HASH"}
+	f = scanFlags{target: "h", username: "carol", ntHashEnv: "PS_TEST_HASH"}
 	if _, err := credentials(&f, nil); err == nil || strings.Contains(err.Error(), "zz") {
 		t.Fatalf("bad hash error must not echo the value: %v", err)
+	}
+	f = scanFlags{target: "h", username: "carol", ntHash: "nothex-but-secret"}
+	if _, err := credentials(&f, nil); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("bad --nt-hash error must not echo the value: %v", err)
 	}
 }
 
