@@ -15,5 +15,5 @@ require (
 	github.com/jfjallid/mstypes v0.0.2 // indirect
 	github.com/jfjallid/ndr v0.2.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
-	software.sslmate.com/src/go-pkcs12 v0.7.0 // indirect
+	software.sslmate.com/src/go-pkcs12 v0.7.2 // indirect
 )
