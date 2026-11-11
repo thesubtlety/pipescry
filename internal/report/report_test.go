@@ -171,3 +171,30 @@ func TestNullDACLMatchesPrincipalAndPermission(t *testing.T) {
 		t.Fatalf("--result must not match DACL state:\n%s", out)
 	}
 }
+
+func TestCompare(t *testing.T) {
+	a, b := fixture(t), fixture(t)
+	var out bytes.Buffer
+	if n := Compare(&out, a, b); n != 0 {
+		t.Fatalf("identical reports differ:\n%s", out.String())
+	}
+
+	b.Mode = model.ModeLocal
+	b.Pipes[0].Security.RawHex = "00"
+	aces := b.Pipes[0].Security.Descriptor.DACL.ACEs
+	b.Pipes[0].Security.Descriptor = &model.Descriptor{Owner: a.Pipes[0].Security.Descriptor.Owner,
+		Group: a.Pipes[0].Security.Descriptor.Group, DACL: model.ACL{State: model.DACLPresent, ACEs: aces[:3]}}
+	b.Pipes[0].AccessTests = append([]model.AccessTest(nil), b.Pipes[0].AccessTests...)
+	b.Pipes[0].AccessTests[2].Result = model.ResultAllowed
+	b.Pipes = append(b.Pipes[:1], b.Pipes[2], model.Pipe{Name: "delta"})
+	out.Reset()
+	if n := Compare(&out, a, b); n != 1 {
+		t.Fatalf("differ = %d:\n%s", n, out.String())
+	}
+	s := out.String()
+	for _, want := range []string{"ACE only in A: ACCESS_DENIED S-1-5-7 0x00000002", "open FILE_WRITE_DATA: A denied", "only in A (1): beta", "only in B (1): delta"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q:\n%s", want, s)
+		}
+	}
+}

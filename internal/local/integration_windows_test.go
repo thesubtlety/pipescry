@@ -54,7 +54,9 @@ func TestLocalIntegration(t *testing.T) {
 		Timeout: 5 * time.Second, Concurrency: 1,
 		Names: []string{open, nulld, empty, ro},
 	})
-	if r.Collection.Enumeration != model.EnumComplete {
+	// Wine's NPFS does not implement directory listing.
+	wantEnum := os.Getenv("PIPESCRY_IT_NO_ENUM") != "1"
+	if wantEnum && r.Collection.Enumeration != model.EnumComplete {
 		t.Fatalf("enumeration %s %+v", r.Collection.Enumeration, r.Collection.EnumerationError)
 	}
 	got := map[string]model.Pipe{}
@@ -63,7 +65,7 @@ func TestLocalIntegration(t *testing.T) {
 	}
 	for _, n := range []string{open, nulld, empty, ro} {
 		p, ok := got[n]
-		if !ok || len(p.Sources) != 2 {
+		if !ok || (wantEnum && len(p.Sources) != 2) {
 			t.Fatalf("%s not enumerated: %+v", n, p.Sources)
 		}
 	}
@@ -84,11 +86,11 @@ func TestLocalIntegration(t *testing.T) {
 	wantResults(t, op, model.ResultAllowed, model.ResultAllowed, model.ResultAllowed)
 
 	if s := got[nulld].Security.Descriptor; s == nil || s.DACL.State != model.DACLNull {
-		t.Fatalf("null DACL: %+v", got[nulld].Security)
+		t.Errorf("null DACL: state %s raw %s", stateOf(got[nulld]), got[nulld].Security.RawHex)
 	}
 	// The owner keeps implicit READ_CONTROL on an empty DACL.
 	if s := got[empty].Security.Descriptor; s == nil || s.DACL.State != model.DACLEmpty {
-		t.Fatalf("empty DACL: %+v", got[empty].Security)
+		t.Errorf("empty DACL: state %s raw %s", stateOf(got[empty]), got[empty].Security.RawHex)
 	}
 	wantResults(t, got[empty], model.ResultAllowed, model.ResultDenied, model.ResultDenied)
 	wantResults(t, got[ro], model.ResultAllowed, model.ResultAllowed, model.ResultDenied)
@@ -107,4 +109,11 @@ func wantResults(t *testing.T, p model.Pipe, want ...model.Result) {
 			t.Errorf("%s %s = %s (%s), want %s", p.Name, p.AccessTests[i].Name, p.AccessTests[i].Result, p.AccessTests[i].Status, w)
 		}
 	}
+}
+
+func stateOf(p model.Pipe) string {
+	if p.Security.Descriptor == nil {
+		return string(p.Security.State)
+	}
+	return string(p.Security.Descriptor.DACL.State)
 }

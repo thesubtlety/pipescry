@@ -138,6 +138,8 @@ func (c *Collector) Enumerate(ctx context.Context) ([]scanner.EnumEntry, model.E
 		return r.entries, model.EnumComplete, nil
 	case len(r.entries) > 0:
 		return r.entries, model.EnumPartial, r.oe
+	case r.oe.Status != nil && r.oe.Status.Kind == "ntstatus" && model.ClassifyNTStatus(r.oe.Status.Code) == model.ResultUnsupported:
+		return r.entries, model.EnumUnsupported, r.oe
 	}
 	return r.entries, model.EnumFailed, r.oe
 }

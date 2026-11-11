@@ -30,6 +30,7 @@ var ntStatusNames = map[uint32]string{
 	0xC00000B5: "STATUS_IO_TIMEOUT",
 	0xC00000BA: "STATUS_FILE_IS_A_DIRECTORY",
 	0xC00000BB: "STATUS_NOT_SUPPORTED",
+	0xC00000CB: "STATUS_BAD_DEVICE_TYPE",
 	0xC00000CC: "STATUS_BAD_NETWORK_NAME",
 	0xC000014B: "STATUS_PIPE_BROKEN",
 	0xC000015B: "STATUS_LOGON_TYPE_NOT_GRANTED",
@@ -87,7 +88,7 @@ func ClassifyNTStatus(code uint32) Result {
 		return ResultDenied
 	case 0xC00000AB, 0xC00000AC, 0xC00000AE:
 		return ResultBusy
-	case 0xC0000002, 0xC0000010, 0xC00000BB:
+	case 0xC0000002, 0xC0000010, 0xC00000BB, 0xC00000CB:
 		return ResultUnsupported
 	}
 	return ResultError

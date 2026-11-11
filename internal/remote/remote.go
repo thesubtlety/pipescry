@@ -222,8 +222,7 @@ func (c *Collector) closeFile(f *smb.File, pipe string) (*bool, string) {
 // parsed descriptor, and the evidence must keep the bytes the server sent.
 func (c *Collector) querySecurityRaw(f *smb.File) ([]byte, error) {
 	info := smb.OwnerSecurityInformation | smb.GroupSecurityInformation | smb.DACLSecurityInformation
-	size := uint32(8192)
-	for attempt := 0; attempt < 2; attempt++ {
+	return queryWithRetry(func(size uint32) ([]byte, error) {
 		req, err := f.NewQueryInfoReq(share, f.FileID(), smb.OInfoSecurity, 0, info, 0, size, nil)
 		if err != nil {
 			return nil, err
@@ -232,7 +231,16 @@ func (c *Collector) querySecurityRaw(f *smb.File) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		buf, err := c.conn.SendRawPDU(pdu)
+		return c.conn.SendRawPDU(pdu)
+	})
+}
+
+// queryWithRetry retries once at 64 KiB when the server reports the
+// descriptor does not fit.
+func queryWithRetry(send func(size uint32) ([]byte, error)) ([]byte, error) {
+	size := uint32(8192)
+	for attempt := 0; attempt < 2; attempt++ {
+		buf, err := send(size)
 		if err != nil {
 			return nil, err
 		}

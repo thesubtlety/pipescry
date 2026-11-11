@@ -15,10 +15,16 @@ func runCLI(t *testing.T, stdin string, args ...string) (int, string, string) {
 	return code, out.String(), errb.String()
 }
 
-func TestNoPasswordFlag(t *testing.T) {
-	code, _, stderr := runCLI(t, "", "scan", "--target", "h", "--username", "u", "--password", "secret")
-	if code != exitUsage || !strings.Contains(stderr, "flag provided but not defined: -password") {
-		t.Fatalf("code=%d stderr=%s", code, stderr)
+func TestPasswordFlagNotEchoed(t *testing.T) {
+	// Port 1 refuses the connection, so this exercises the failure path.
+	code, out, stderr := runCLI(t, "", "scan", "--target", "127.0.0.1", "--port", "1", "--timeout", "2s",
+		"--username", "u", "--password", "s3cret-value", "--verbose")
+	if code != exitScan || strings.Contains(out+stderr, "s3cret-value") {
+		t.Fatalf("code=%d output contains password or wrong code:\n%s%s", code, out, stderr)
+	}
+	f := scanFlags{target: "h", username: "u", password: "p", passwordEnv: "X"}
+	if _, err := credentials(&f, nil); err == nil {
+		t.Fatal("accepted --password with --password-env")
 	}
 }
 

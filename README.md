@@ -56,6 +56,7 @@ pipescry.exe scan --local --access-test --json local.json --principal S-1-1-0 --
 | `--local` | | Scan the local NPFS. Windows only; other platforms exit with "local mode unsupported". |
 | `--username U` | | Account. `DOMAIN\user` and `user@domain` set the domain. |
 | `--domain D` | | Account domain. Empty or `.` authenticates as a local account on the target. |
+| `--password P` | | Password. Visible in process listings and shell history; prefer `--password-env`. |
 | `--password-env VAR` | | Read the password from an environment variable. |
 | `--password-stdin` | | Read the password from the first line of stdin. |
 | `--hash-env VAR` | | Read a 32-hex-character NT hash from an environment variable. |
@@ -79,7 +80,9 @@ pipescry.exe scan --local --access-test --json local.json --principal S-1-1-0 --
 
 Different filter flags combine with AND. Filters change only the text display; JSON output and summary counts always cover everything collected.
 
-Passwords cannot be passed as arguments. Exit status: 0 scan completed (individual pipe failures are recorded in the output), 1 connection or output failure, 2 usage error.
+Passwords are never written to output or logs. Exit status: 0 scan completed (individual pipe failures are recorded in the output), 1 connection or output failure, 2 usage error.
+
+`pipescry compare A.json B.json` prints per-pipe differences in descriptor bytes, ACEs, and open-test results, plus pipes only one report contains. It exits 0 when no shared pipe differs, 1 when one does, and 2 on error.
 
 ## Output schema
 
@@ -121,6 +124,6 @@ Numeric fields keep the raw value; `*_hex` and name fields are derived from it.
 - Open tests reflect only the scanning identity.
 - SACLs and mandatory labels are not requested.
 - Only NTLM authentication is wired. Kerberos is not exposed.
-- Not yet validated against Windows lab targets, and local versus remote results have not been compared. Integration tests exist for both; see `docs/testing.md`.
+- Not yet validated on real Windows. Under Wine, local descriptor collection works, but Wine lacks NPFS listing and pipe access checks. See `docs/testing.md` for the lab runbook.
 
 Implementation notes are in [`docs/`](docs/).

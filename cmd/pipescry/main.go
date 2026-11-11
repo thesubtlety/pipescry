@@ -36,6 +36,7 @@ const usageTop = `Usage: pipescry <command> [flags]
 
 Commands:
   scan      Collect named-pipe security descriptors and optional open tests
+  compare   Compare two JSON reports (e.g. local vs remote); exit 1 if pipes differ
   version   Print version
 
 Run "pipescry scan -h" for scan flags.
@@ -49,6 +50,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "scan":
 		return scan(args[1:], stdin, stdout, stderr)
+	case "compare":
+		return compare(args[1:], stdout, stderr)
 	case "version", "--version", "-version":
 		fmt.Fprintf(stdout, "pipescry %s\n", version)
 		return exitOK
@@ -58,6 +61,27 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stderr, "unknown command %q\n\n%s", args[0], usageTop)
 	return exitUsage
+}
+
+func compare(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 2 {
+		fmt.Fprintln(stderr, "Usage: pipescry compare A.json B.json\n\nCompares descriptor bytes and open-test results per pipe. Exit 0 if no pipe present in both differs, 1 if any does, 2 on error.")
+		return exitUsage
+	}
+	a, err := report.ReadJSONFile(args[0])
+	if err != nil {
+		fmt.Fprintf(stderr, "compare: %v\n", err)
+		return exitUsage
+	}
+	b, err := report.ReadJSONFile(args[1])
+	if err != nil {
+		fmt.Fprintf(stderr, "compare: %v\n", err)
+		return exitUsage
+	}
+	if report.Compare(stdout, a, b) > 0 {
+		return exitScan
+	}
+	return exitOK
 }
 
 type listFlag []string
@@ -73,18 +97,18 @@ func (l *listFlag) Set(v string) error {
 }
 
 type scanFlags struct {
-	target, username, domain, passwordEnv, hashEnv string
-	port                                           int
-	passwordStdin, anonymous, local                bool
-	namesFile                                      string
-	names                                          listFlag
-	noEnumerate, accessTest                        bool
-	timeout                                        time.Duration
-	concurrency                                    int
-	jsonPath, format                               string
-	summary, quiet, noColor, verbose               bool
-	principals, permissions, results               listFlag
-	evidence                                       string
+	target, username, domain, password, passwordEnv, hashEnv string
+	port                                                     int
+	passwordStdin, anonymous, local                          bool
+	namesFile                                                string
+	names                                                    listFlag
+	noEnumerate, accessTest                                  bool
+	timeout                                                  time.Duration
+	concurrency                                              int
+	jsonPath, format                                         string
+	summary, quiet, noColor, verbose                         bool
+	principals, permissions, results                         listFlag
+	evidence                                                 string
 }
 
 func scan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -96,6 +120,7 @@ func scan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.IntVar(&f.port, "port", 445, "remote SMB TCP port")
 	fs.StringVar(&f.username, "username", "", "account name; accepts DOMAIN\\user or user@domain")
 	fs.StringVar(&f.domain, "domain", "", "account domain; empty or \".\" authenticates as a local account on the target")
+	fs.StringVar(&f.password, "password", "", "password; visible in process listings and shell history, prefer --password-env")
 	fs.StringVar(&f.passwordEnv, "password-env", "", "read the password from this environment variable")
 	fs.BoolVar(&f.passwordStdin, "password-stdin", false, "read the password from the first line of stdin")
 	fs.StringVar(&f.hashEnv, "hash-env", "", "read a hex NT hash from this environment variable instead of a password")
@@ -255,7 +280,7 @@ func validate(f *scanFlags) error {
 		return errors.New("--local and --target are mutually exclusive")
 	case !f.local && f.target == "":
 		return errors.New("one of --target or --local is required")
-	case f.local && (f.username != "" || f.anonymous || f.passwordEnv != "" || f.hashEnv != "" || f.passwordStdin):
+	case f.local && (f.username != "" || f.anonymous || f.password != "" || f.passwordEnv != "" || f.hashEnv != "" || f.passwordStdin):
 		return errors.New("credential flags apply only to --target; --local uses the current process token")
 	case f.format != "text" && f.format != "json":
 		return fmt.Errorf("--format %q: want text or json", f.format)
@@ -271,12 +296,10 @@ func validate(f *scanFlags) error {
 	return nil
 }
 
-// credentials never accepts a secret on the command line, so it cannot
-// appear in process listings or shell history.
 func credentials(f *scanFlags, stdin io.Reader) (remote.Options, error) {
 	opt := remote.Options{Host: f.target, Port: f.port, Domain: f.domain, DialTimeout: f.timeout}
 	if f.anonymous {
-		if f.username != "" || f.passwordEnv != "" || f.hashEnv != "" || f.passwordStdin {
+		if f.username != "" || f.password != "" || f.passwordEnv != "" || f.hashEnv != "" || f.passwordStdin {
 			return opt, errors.New("--anonymous cannot be combined with credentials")
 		}
 		opt.Anonymous = true
@@ -297,15 +320,17 @@ func credentials(f *scanFlags, stdin io.Reader) (remote.Options, error) {
 	opt.User = user
 
 	sources := 0
-	for _, b := range []bool{f.passwordEnv != "", f.passwordStdin, f.hashEnv != ""} {
+	for _, b := range []bool{f.password != "", f.passwordEnv != "", f.passwordStdin, f.hashEnv != ""} {
 		if b {
 			sources++
 		}
 	}
 	if sources != 1 {
-		return opt, errors.New("exactly one of --password-env, --password-stdin, or --hash-env is required with --username")
+		return opt, errors.New("exactly one of --password, --password-env, --password-stdin, or --hash-env is required with --username")
 	}
 	switch {
+	case f.password != "":
+		opt.Password = f.password
 	case f.passwordEnv != "":
 		v, ok := os.LookupEnv(f.passwordEnv)
 		if !ok {

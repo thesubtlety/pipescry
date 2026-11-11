@@ -28,21 +28,49 @@ PIPESCRY_IT_TARGET=127.0.0.1 PIPESCRY_IT_PORT=4445 PIPESCRY_IT_USER=auditor PIPE
 
 Samba refuses the IPC$ listing and pipe security queries, so it cannot validate descriptor collection.
 
-## Local integration (Windows)
+## Windows lab runbook
+
+Build on any host, then copy `dist/` to the Windows machine. No Go toolchain is needed there.
 
 ```
-go test -tags integration ./internal/local
+./scripts/build.sh          # pipescry binaries
+./scripts/build-tests.sh    # dist/tests/pipescry-{local,remote}-it-windows-{amd64,arm64}.exe
 ```
 
-Creates four test pipes with known SDDL (normal, `NO_ACCESS_CONTROL`, empty, read-only for Everyone), scans them, and checks enumeration, the parsed Everyone ACE mask, DACL states, and per-right open results.
+On the Windows host (match the binary to the CPU):
 
-## Lab comparison
+1. Local integration test. Creates four test pipes with known SDDL (normal, `NO_ACCESS_CONTROL`, empty, read-only for Everyone) and checks enumeration, the Everyone ACE mask, DACL states, and per-right open results:
+   ```
+   .\pipescry-local-it-windows-amd64.exe -test.v
+   ```
+2. Remote integration test against the host itself or another Windows target:
+   ```
+   $env:PIPESCRY_IT_TARGET="127.0.0.1"; $env:PIPESCRY_IT_USER="user"; $env:PIPESCRY_IT_PASS="..."; $env:PIPESCRY_IT_WINDOWS="1"
+   .\pipescry-remote-it-windows-amd64.exe -test.v
+   ```
+3. Run both modes with the same account and compare:
+   ```
+   .\pipescry-windows-amd64.exe scan --local --access-test --json local.json
+   .\pipescry-windows-amd64.exe scan --target 127.0.0.1 --username user --password-env P --access-test --json remote.json
+   .\pipescry-windows-amd64.exe compare local.json remote.json
+   ```
+   Descriptor bytes should match. Open results may differ, because the network logon token differs from the interactive one (see `implementation.md`). Run the local scan both elevated and not.
 
-Not yet done. To compare modes, run both against the same host with the same account and diff the `pipes[].security.raw_hex` and `access_tests[].result` fields:
+Things only a real Windows host can confirm:
 
-```
-pipescry.exe scan --local --access-test --format json > local.json
-pipescry scan --target HOST --username ACCOUNT --password-env P --access-test --format json > remote.json
-```
+- NTSTATUS capture after `CreateFileW` (`ntstatus` is set on failed local opens).
+- `denied` for local opens rejected by the DACL.
+- NPFS enumeration and `max_instances`.
+- IPC$ enumeration and `QUERY_INFO` security over SMB.
 
-Descriptor bytes should match. Open results may differ for the reasons in `implementation.md`.
+## Wine results (2026-11-11)
+
+Under Wine 9 on Linux, `pipescry-local-it-windows-amd64.exe` with `PIPESCRY_IT_NO_ENUM=1`:
+
+- Passed: pipe creation and open, `GetSecurityInfo`, descriptor parsing (Everyone `0x0012019B`), handle close, the empty DACL.
+- Wine-only failures:
+  - NPFS directory listing returns `STATUS_BAD_DEVICE_TYPE`.
+  - `D:NO_ACCESS_CONTROL` is stored as an empty DACL instead of a NULL one.
+  - Pipe access checks are not enforced, so every open is allowed.
+
+The Windows build's remote mode, run under Wine against Samba, produced the same results as the Linux build.
