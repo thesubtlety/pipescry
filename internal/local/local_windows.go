@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -26,6 +28,8 @@ var (
 	ntdll                    = windows.NewLazySystemDLL("ntdll.dll")
 	procNtQueryDirectoryFile = ntdll.NewProc("NtQueryDirectoryFile")
 	procRtlGetLastNtStatus   = ntdll.NewProc("RtlGetLastNtStatus")
+
+	haveRtlGetLastNtStatus = procRtlGetLastNtStatus.Find() == nil
 )
 
 const (
@@ -74,7 +78,7 @@ func currentIdentity() (model.Identity, error) {
 	elevated := tok.IsElevated()
 	id.Elevated = &elevated
 	id.Anonymous = id.SID == "S-1-5-7"
-	id.Guest = id.SID == "S-1-5-32-546"
+	id.Guest = strings.HasPrefix(id.SID, "S-1-5-21-") && strings.HasSuffix(id.SID, "-501")
 	return id, nil
 }
 
@@ -88,18 +92,30 @@ func (c *Collector) Resolver() security.Resolver {
 			n := v.(string)
 			return n, n != ""
 		}
-		name := ""
-		if sid, err := windows.StringToSid(s); err == nil {
-			if acct, dom, _, err := sid.LookupAccount(""); err == nil {
-				name = acct
-				if dom != "" {
-					name = dom + `\` + acct
-				}
-			}
-		}
+		// LookupAccountSid can block on an unreachable domain controller.
+		ctx, cancel := context.WithTimeout(context.Background(), lookupTimeout)
+		name, _ := scanner.Call(ctx, func() (string, error) { return lookupSID(s), nil })
+		cancel()
 		c.names.Store(s, name)
 		return name, name != ""
 	}
+}
+
+const lookupTimeout = 3 * time.Second
+
+func lookupSID(s string) string {
+	sid, err := windows.StringToSid(s)
+	if err != nil {
+		return ""
+	}
+	acct, dom, _, err := sid.LookupAccount("")
+	if err != nil {
+		return ""
+	}
+	if dom == "" {
+		return acct
+	}
+	return dom + `\` + acct
 }
 
 // Enumerate reads the NPFS root directory. NPFS lists a name while at least
@@ -133,7 +149,7 @@ func enumerate() ([]scanner.EnumEntry, *model.OpError) {
 	h, err := windows.CreateFile(root, fileListDirectory|windows.SYNCHRONIZE,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, 0, 0)
 	if err != nil {
-		return nil, win32Error("CreateFileW", pipeRoot, err)
+		return nil, win32Error("CreateFileW", pipeRoot, err, lastNTStatus())
 	}
 	defer windows.CloseHandle(h)
 
@@ -171,61 +187,70 @@ func pipePath(name string) *uint16 {
 }
 
 // openPipe requests SECURITY_IDENTIFICATION so the pipe server can identify
-// but not impersonate this process. FILE_OPEN semantics (OPEN_EXISTING)
-// never create a pipe instance.
-func openPipe(name string, access uint32) (windows.Handle, error) {
-	return windows.CreateFile(pipePath(name), access,
+// but not impersonate this process. OPEN_EXISTING never creates a pipe
+// instance. The caller must hold its OS thread so nt belongs to this call.
+func openPipe(name string, access uint32) (h windows.Handle, err error, nt *model.Status) {
+	h, err = windows.CreateFile(pipePath(name), access,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING,
 		windows.SECURITY_SQOS_PRESENT|windows.SECURITY_IDENTIFICATION, 0)
+	if err != nil {
+		nt = lastNTStatus()
+	}
+	return
 }
 
-func (c *Collector) QuerySecurity(ctx context.Context, pipe string) ([]byte, *model.OpError) {
-	type res struct {
-		raw []byte
-		oe  *model.OpError
-	}
-	r, err := scanner.Call(ctx, func() (res, error) {
+func (c *Collector) QuerySecurity(ctx context.Context, pipe string) scanner.SDOutcome {
+	o, err := scanner.Call(ctx, func() (scanner.SDOutcome, error) {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
-		h, err := openPipe(pipe, scanner.SecurityQueryAccess)
+		h, err, nt := openPipe(pipe, scanner.SecurityQueryAccess)
 		if err != nil {
-			return res{oe: win32Error("CreateFileW(READ_CONTROL)", pipeRoot+pipe, err)}, nil
+			return scanner.SDOutcome{Err: win32Error("CreateFileW(READ_CONTROL)", pipeRoot+pipe, err, nt)}, nil
 		}
-		defer windows.CloseHandle(h)
+		// GetSecurityInfo returns its error without SetLastError, so the TEB
+		// NTSTATUS is not recorded for it.
 		sd, err := windows.GetSecurityInfo(h, windows.SE_KERNEL_OBJECT,
 			windows.OWNER_SECURITY_INFORMATION|windows.GROUP_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+		var out scanner.SDOutcome
 		if err != nil {
-			return res{oe: win32Error("GetSecurityInfo", pipeRoot+pipe, err)}, nil
+			out.Err = win32Error("GetSecurityInfo", pipeRoot+pipe, err, nil)
+		} else {
+			b := unsafe.Slice((*byte)(unsafe.Pointer(sd)), sd.Length())
+			out.Raw = append([]byte(nil), b...)
 		}
-		b := unsafe.Slice((*byte)(unsafe.Pointer(sd)), sd.Length())
-		return res{raw: append([]byte(nil), b...)}, nil
+		out.Closed, out.CloseErr = closeHandle(h, pipe)
+		return out, nil
 	})
 	if err != nil {
-		return nil, &model.OpError{Op: "query_security", Target: pipeRoot + pipe, Message: fmt.Sprintf("query security %s%s: %v", pipeRoot, pipe, err)}
+		return scanner.SDOutcome{Err: &model.OpError{Op: "query_security", Target: pipeRoot + pipe, Message: fmt.Sprintf("query security %s%s: %v", pipeRoot, pipe, err)}}
 	}
-	return r.raw, r.oe
+	return o
+}
+
+func closeHandle(h windows.Handle, pipe string) (*bool, string) {
+	closed := true
+	if err := windows.CloseHandle(h); err != nil {
+		closed = false
+		return &closed, fmt.Sprintf("CloseHandle %s%s: %v", pipeRoot, pipe, err)
+	}
+	return &closed, ""
 }
 
 func (c *Collector) OpenTest(ctx context.Context, pipe string, access uint32) scanner.OpenOutcome {
 	o, err := scanner.Call(ctx, func() (scanner.OpenOutcome, error) {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
-		h, err := openPipe(pipe, access)
+		h, err, nt := openPipe(pipe, access)
 		if err != nil {
-			oe := win32Error("CreateFileW", pipeRoot+pipe, err)
+			oe := win32Error("CreateFileW", pipeRoot+pipe, err, nt)
 			out := scanner.OpenOutcome{Result: model.ResultError, Status: oe.Status, NTStatus: oe.NTStatus, Err: oe.Message}
 			if oe.Status != nil {
-				out.Result = model.ClassifyWin32(oe.Status.Code)
+				out.Result = model.ClassifyWin32(oe.Status.Code, oe.NTStatus)
 			}
 			return out, nil
 		}
 		out := scanner.OpenOutcome{Result: model.ResultAllowed, Status: model.Win32(0)}
-		closed := true
-		if cerr := windows.CloseHandle(h); cerr != nil {
-			closed = false
-			out.CloseErr = fmt.Sprintf("CloseHandle %s%s: %v", pipeRoot, pipe, cerr)
-		}
-		out.Closed = &closed
+		out.Closed, out.CloseErr = closeHandle(h, pipe)
 		return out, nil
 	})
 	if err != nil {
@@ -234,19 +259,25 @@ func (c *Collector) OpenTest(ctx context.Context, pipe string, access uint32) sc
 	return o
 }
 
-// win32Error must run on the thread that made the failing call: it reads
-// the NTSTATUS the kernel left in the TEB alongside the Win32 code.
-func win32Error(op, target string, err error) *model.OpError {
-	oe := &model.OpError{Op: op, Target: target, Message: fmt.Sprintf("%s %s: %v", op, target, err)}
+// lastNTStatus reads the NTSTATUS the kernel left in the TEB. It must run
+// immediately after the failing call, on the same thread, before anything
+// (including error formatting) can overwrite it.
+func lastNTStatus() *model.Status {
+	if !haveRtlGetLastNtStatus {
+		return nil
+	}
+	r, _, _ := procRtlGetLastNtStatus.Call()
+	if r == 0 {
+		return nil
+	}
+	return model.NTStatus(uint32(r))
+}
+
+func win32Error(op, target string, err error, nt *model.Status) *model.OpError {
+	oe := &model.OpError{Op: op, Target: target, Message: fmt.Sprintf("%s %s: %v", op, target, err), NTStatus: nt}
 	var errno windows.Errno
 	if errors.As(err, &errno) {
 		oe.Status = model.Win32(uint32(errno))
-		if procRtlGetLastNtStatus.Find() == nil {
-			r, _, _ := procRtlGetLastNtStatus.Call()
-			if r != 0 {
-				oe.NTStatus = model.NTStatus(uint32(r))
-			}
-		}
 	}
 	return oe
 }

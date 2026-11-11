@@ -211,7 +211,8 @@ func (p *printer) pipe(r *model.Report, pp *model.Pipe) bool {
 			tests = append(tests, t)
 		}
 	}
-	if fl.Active() && len(aces) == 0 && len(tests) == 0 {
+	grantAll := pp.Security.Descriptor != nil && fl.MatchGrantAll(pp.Security.Descriptor.DACL.State)
+	if fl.Active() && len(aces) == 0 && len(tests) == 0 && !grantAll {
 		return false
 	}
 

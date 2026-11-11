@@ -19,6 +19,13 @@ type EnumEntry struct {
 	MaxInstances     *int64
 }
 
+type SDOutcome struct {
+	Raw      []byte
+	Err      *model.OpError
+	Closed   *bool
+	CloseErr string
+}
+
 type OpenOutcome struct {
 	Result   model.Result
 	Status   *model.Status
@@ -36,7 +43,7 @@ type Collector interface {
 	Transport() *model.Transport
 	Resolver() security.Resolver
 	Enumerate(ctx context.Context) ([]EnumEntry, model.EnumerationStatus, *model.OpError)
-	QuerySecurity(ctx context.Context, pipe string) ([]byte, *model.OpError)
+	QuerySecurity(ctx context.Context, pipe string) SDOutcome
 	OpenTest(ctx context.Context, pipe string, access uint32) OpenOutcome
 }
 
@@ -155,10 +162,14 @@ func Run(ctx context.Context, c Collector, cfg Config) *model.Report {
 		}
 	}
 	for _, n := range cfg.Names {
-		if NormalizeName(n) != "" {
-			r.Collection.PipesSupplied++
-		}
 		add(EnumEntry{Name: n}, "names_list")
+	}
+	for _, p := range pipes {
+		for _, s := range p.Sources {
+			if s == "names_list" {
+				r.Collection.PipesSupplied++
+			}
+		}
 	}
 
 	sort.Slice(order, func(i, j int) bool { return order[i] < order[j] })
@@ -170,6 +181,10 @@ func Run(ctx context.Context, c Collector, cfg Config) *model.Report {
 
 	resolve := c.Resolver()
 	id := c.Identity()
+	if id.Guest {
+		// The server checked access as Guest, not as the requested account.
+		id.Name, id.SID = "Guest", ""
+	}
 	sem := make(chan struct{}, cfg.Concurrency)
 	var wg sync.WaitGroup
 	for i, p := range work {
@@ -217,8 +232,10 @@ func collectPipe(ctx context.Context, c Collector, cfg Config, p *model.Pipe, id
 	p.Security.RequestedHex = model.Hex32(SecurityQueryAccess)
 
 	qctx, cancel := withTimeout(ctx, cfg.Timeout)
-	raw, err := c.QuerySecurity(qctx, p.Name)
+	so := c.QuerySecurity(qctx, p.Name)
 	cancel()
+	raw, err := so.Raw, so.Err
+	p.Security.HandleClosed, p.Security.CloseError = so.Closed, so.CloseErr
 	switch {
 	case err != nil:
 		p.Security.State = model.SDFailed
@@ -259,7 +276,7 @@ func collectPipe(ctx context.Context, c Collector, cfg Config, p *model.Pipe, id
 
 func unsupported(s *model.Status) bool {
 	if s.Kind == "win32" {
-		return model.ClassifyWin32(s.Code) == model.ResultUnsupported
+		return model.ClassifyWin32(s.Code, nil) == model.ResultUnsupported
 	}
 	return model.ClassifyNTStatus(s.Code) == model.ResultUnsupported
 }

@@ -73,7 +73,7 @@ func TestFilterPrincipal(t *testing.T) {
 	if got := aceLine.FindAllString(out, -1); len(got) != 1 || !strings.Contains(out, "S-1-1-0 Everyone") {
 		t.Fatalf("want only the Everyone ACE:\n%s", out)
 	}
-	if strings.Contains(out, "beta") || strings.Contains(out, "gamma") {
+	if strings.Contains(out, "beta") {
 		t.Fatalf("pipes without matching evidence shown:\n%s", out)
 	}
 	out = render(t, fixture(t), []string{"auditor"}, nil, "", nil)
@@ -158,5 +158,16 @@ func TestJSONDeterministicAndFactual(t *testing.T) {
 		if strings.Contains(text, w) {
 			t.Errorf("output contains subjective term %q", w)
 		}
+	}
+}
+
+func TestNullDACLMatchesPrincipalAndPermission(t *testing.T) {
+	out := render(t, fixture(t), []string{"S-1-1-0"}, []string{"WRITE_DAC"}, "", nil)
+	if !strings.Contains(out, "gamma") || !strings.Contains(out, "NULL DACL") {
+		t.Fatalf("NULL DACL pipe must match DACL filters:\n%s", out)
+	}
+	out = render(t, fixture(t), nil, nil, "", []string{"allowed"})
+	if strings.Contains(out, "gamma") {
+		t.Fatalf("--result must not match DACL state:\n%s", out)
 	}
 }

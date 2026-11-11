@@ -81,6 +81,12 @@ func (f Filter) MatchACE(a model.ACE) bool {
 	return true
 }
 
+// MatchGrantAll reports whether a NULL or absent DACL satisfies the DACL
+// filters. Such a DACL has no ACEs but grants every right to every caller.
+func (f Filter) MatchGrantAll(state model.DACLState) bool {
+	return f.ShowDACL() && (state == model.DACLNull || state == model.DACLNotPresent)
+}
+
 func (f Filter) MatchTest(t model.AccessTest) bool {
 	if !f.ShowOpen() {
 		return false

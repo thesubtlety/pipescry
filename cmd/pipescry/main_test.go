@@ -35,6 +35,7 @@ func TestUsageErrors(t *testing.T) {
 		{"scan", "--local", "--permission", "NOPE"},
 		{"scan", "--local", "--no-enumerate"},
 		{"scan", "--local", "--timeout", "0s"},
+		{"scan", "--local", "--evidence", "dacl", "--result", "denied"},
 	}
 	for _, c := range cases {
 		if code, _, _ := runCLI(t, "", c...); code != exitUsage {

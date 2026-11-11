@@ -35,7 +35,8 @@ var ntStatusNames = map[uint32]string{
 	0xC000015B: "STATUS_LOGON_TYPE_NOT_GRANTED",
 	0xC000006D: "STATUS_LOGON_FAILURE",
 	0xC0000072: "STATUS_ACCOUNT_DISABLED",
-	0xC0000201: "STATUS_NETWORK_SESSION_EXPIRED",
+	0xC0000201: "STATUS_NETWORK_OPEN_RESTRICTION",
+	0xC000035C: "STATUS_NETWORK_SESSION_EXPIRED",
 	0xC0000203: "STATUS_USER_SESSION_DELETED",
 }
 
@@ -92,11 +93,18 @@ func ClassifyNTStatus(code uint32) Result {
 	return ResultError
 }
 
-func ClassifyWin32(code uint32) Result {
+// ClassifyWin32 needs nt because RtlNtStatusToDosError maps several
+// non-access statuses (STATUS_DELETE_PENDING, STATUS_FILE_IS_A_DIRECTORY,
+// ...) to ERROR_ACCESS_DENIED. Code 5 is denied only when no NTSTATUS was
+// captured or the NTSTATUS is STATUS_ACCESS_DENIED.
+func ClassifyWin32(code uint32, nt *Status) Result {
 	switch code {
 	case 0:
 		return ResultAllowed
 	case 5:
+		if nt != nil && nt.Code != 0xC0000022 {
+			return ResultError
+		}
 		return ResultDenied
 	case 231:
 		return ResultBusy

@@ -32,7 +32,12 @@ func (f *fake) Resolver() security.Resolver { return nil }
 func (f *fake) Enumerate(context.Context) ([]EnumEntry, model.EnumerationStatus, *model.OpError) {
 	return f.enum, f.status, nil
 }
-func (f *fake) QuerySecurity(ctx context.Context, p string) ([]byte, *model.OpError) {
+func (f *fake) QuerySecurity(ctx context.Context, p string) SDOutcome {
+	raw, err := f.query(ctx, p)
+	return SDOutcome{Raw: raw, Err: err}
+}
+
+func (f *fake) query(ctx context.Context, p string) ([]byte, *model.OpError) {
 	f.mu.Lock()
 	f.queried = append(f.queried, p)
 	f.mu.Unlock()
@@ -71,7 +76,7 @@ func TestRunMergesSortsAndRecordsEvidence(t *testing.T) {
 	}
 	r := Run(context.Background(), f, Config{
 		Mode: model.ModeRemote, Enumerate: true, AccessTest: true, Timeout: time.Second, Concurrency: 3,
-		Names: []string{`\\host\pipe\SPOOLSS`, "extra", "gone", "samba", ""},
+		Names: []string{`\\host\pipe\SPOOLSS`, "extra", "gone", "samba", "", "gone"},
 	})
 
 	var names []string
@@ -170,5 +175,19 @@ func TestNormalizeName(t *testing.T) {
 		if got := NormalizeName(in); got != want {
 			t.Errorf("NormalizeName(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+type guestFake struct{ fake }
+
+func (g *guestFake) Identity() model.Identity {
+	return model.Identity{Name: "LAB\\auditor", AuthMethod: "ntlm", Guest: true}
+}
+
+func TestGuestSessionTestsAttributedToGuest(t *testing.T) {
+	g := &guestFake{fake{sds: map[string][]byte{}}}
+	r := Run(context.Background(), g, Config{Names: []string{"a"}, AccessTest: true, Timeout: time.Second})
+	if r.Identity.Name != "LAB\\auditor" || r.Pipes[0].AccessTests[0].Identity != "Guest" {
+		t.Fatalf("identity %q, test identity %q", r.Identity.Name, r.Pipes[0].AccessTests[0].Identity)
 	}
 }

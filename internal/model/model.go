@@ -143,6 +143,8 @@ type SecurityEvidence struct {
 	RequestedAccess uint32          `json:"requested_access"`
 	RequestedHex    string          `json:"requested_access_hex"`
 	RawHex          string          `json:"raw_hex,omitempty"`
+	HandleClosed    *bool           `json:"handle_closed"`
+	CloseError      string          `json:"close_error,omitempty"`
 	Descriptor      *Descriptor     `json:"descriptor"`
 	Error           *OpError        `json:"error"`
 }

@@ -115,7 +115,7 @@ func scan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.BoolVar(&f.noColor, "no-color", false, "disable ANSI colors (also disabled when stdout is not a terminal or NO_COLOR is set)")
 	fs.BoolVar(&f.verbose, "verbose", false, "text output: add raw descriptors and ACE flags; stderr: SMB library debug log")
 	fs.Var(&f.principals, "principal", "display only ACEs whose trustee, or tests whose identity, matches this SID or name; repeatable")
-	fs.Var(&f.permissions, "permission", "display only ACEs granting, or tests requesting, this right after generic mapping (e.g. FILE_WRITE_DATA, WRITE_DAC, 0x4); repeatable")
+	fs.Var(&f.permissions, "permission", "display only ACEs (allow or deny) whose mask, or tests whose request, contains this right after generic mapping (e.g. FILE_WRITE_DATA, WRITE_DAC, 0x4); NULL DACLs always match; repeatable")
 	fs.StringVar(&f.evidence, "evidence", "all", "display evidence type: all, dacl, or open")
 	fs.Var(&f.results, "result", "display only open tests with this result: allowed, denied, busy, error, unsupported, not_tested; repeatable")
 	fs.Usage = func() {
@@ -169,7 +169,7 @@ Flags:
 			fmt.Fprintf(stderr, format+"\n", a...)
 		}
 	}
-	if f.verbose {
+	if f.verbose && !f.quiet {
 		remote.ConfigureLogging(stderr, true)
 	} else {
 		remote.ConfigureLogging(io.Discard, false)
@@ -177,6 +177,8 @@ Flags:
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	// Restore default handling after the first interrupt so a second one exits.
+	go func() { <-ctx.Done(); stop() }()
 
 	var col scanner.Collector
 	mode := model.ModeRemote
@@ -257,6 +259,8 @@ func validate(f *scanFlags) error {
 		return errors.New("credential flags apply only to --target; --local uses the current process token")
 	case f.format != "text" && f.format != "json":
 		return fmt.Errorf("--format %q: want text or json", f.format)
+	case len(f.results) > 0 && strings.EqualFold(f.evidence, "dacl"):
+		return errors.New("--result filters open tests and cannot be combined with --evidence dacl")
 	case f.timeout <= 0:
 		return errors.New("--timeout must be positive")
 	case f.concurrency < 1 || f.concurrency > 64:

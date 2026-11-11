@@ -45,16 +45,18 @@ Bit `0x4` is `FILE_APPEND_DATA` on files and `FILE_CREATE_PIPE_INSTANCE` on pipe
 - Descriptor: `CREATE` with `DesiredAccess = READ_CONTROL` exactly, then `QUERY_INFO` with `InfoType = SMB2_0_INFO_SECURITY` and `OWNER|GROUP|DACL`. go-smb's `QueryInfoSecurityRaw` returns only a parsed structure, so pipescry builds the request with `NewQueryInfoReq`, sends it with `SendRawPDU` (which applies message IDs, signing, and encryption), and keeps the returned bytes. `STATUS_BUFFER_TOO_SMALL`/`STATUS_BUFFER_OVERFLOW` triggers one retry at 64 KiB.
 - Open tests: `CREATE` with the exact mask, `FILE_OPEN` disposition, share read/write, `ImpersonationLevel = Identification`, then `CLOSE`. Identification lets the pipe server identify the scanning account but not act as it.
 - Timeouts: go-smb calls take no context. Each open-and-close runs in one goroutine; if the deadline passes, the result is recorded as `error` and the goroutine still closes any handle the late reply creates.
-- Result mapping: `STATUS_SUCCESS` → allowed; `STATUS_ACCESS_DENIED` → denied; `STATUS_PIPE_BUSY`, `STATUS_PIPE_NOT_AVAILABLE`, `STATUS_INSTANCE_NOT_AVAILABLE` → busy; `STATUS_NOT_SUPPORTED`, `STATUS_INVALID_DEVICE_REQUEST`, `STATUS_NOT_IMPLEMENTED` → unsupported; everything else, including transport errors and timeouts, → error. Only an explicit access-denied status yields `denied`.
+- Result mapping applies only to the status of the `CREATE` itself, not to a tree reconnect inside go-smb. `STATUS_SUCCESS` → allowed; `STATUS_ACCESS_DENIED` → denied; `STATUS_PIPE_BUSY`, `STATUS_PIPE_NOT_AVAILABLE`, `STATUS_INSTANCE_NOT_AVAILABLE` → busy; `STATUS_NOT_SUPPORTED`, `STATUS_INVALID_DEVICE_REQUEST`, `STATUS_NOT_IMPLEMENTED` → unsupported; everything else, including transport errors and timeouts, → error. Only an explicit access-denied status yields `denied`.
+- Guest mapping: if the server sets `SMB2_SESSION_FLAG_IS_GUEST`, access tests record `Guest` as the tested identity.
 - Signing and cipher: `signing_required` and `cipher_negotiated` are what go-smb exposes. A negotiated cipher does not prove the session is encrypted; anonymous and guest sessions have no key.
 
 ## Local collection
 
 - Enumeration: `CreateFileW("\\.\pipe\", FILE_LIST_DIRECTORY|SYNCHRONIZE)`, then `NtQueryDirectoryFile` with `FileDirectoryInformation` until `STATUS_NO_MORE_FILES`. NPFS reports current instances in `EndOfFile` and maximum instances in `AllocationSize` (`0xFFFFFFFF` = unlimited). `NtQueryDirectoryFile` is not in `x/sys/windows`; it is loaded from ntdll.
 - Descriptor: `CreateFileW` with `READ_CONTROL`, `OPEN_EXISTING`, `SECURITY_SQOS_PRESENT|SECURITY_IDENTIFICATION`, then `GetSecurityInfo(SE_KERNEL_OBJECT, OWNER|GROUP|DACL)`. `x/sys/windows` copies the self-relative descriptor into Go memory.
-- Errors: the Win32 code from `GetLastError` and the NTSTATUS from `RtlGetLastNtStatus` are both recorded. The calling goroutine is locked to its OS thread so both values come from the same thread.
-- Identity: the process token user, with `elevated` from `TokenElevation`. pipescry enables no privileges and does not impersonate.
-- Result mapping: `ERROR_SUCCESS` → allowed; `ERROR_ACCESS_DENIED` → denied; `ERROR_PIPE_BUSY` → busy; `ERROR_INVALID_FUNCTION`, `ERROR_NOT_SUPPORTED` → unsupported; anything else → error.
+- Errors: the Win32 code and the NTSTATUS from `RtlGetLastNtStatus` are both recorded for `CreateFileW`. The NTSTATUS is read immediately after the call, on the same locked OS thread, before error formatting (FormatMessage can overwrite it). `GetSecurityInfo` returns its error without touching the TEB, so no NTSTATUS is recorded for it.
+- Identity: the process token user, with `elevated` from `TokenElevation`. `guest` is set for a domain or local SID with RID 501. pipescry enables no privileges and does not impersonate.
+- SID names: `LookupAccountSid`, cached, 3 s per SID. A lookup that times out leaves the SID unnamed.
+- Result mapping: `ERROR_SUCCESS` → allowed; `ERROR_ACCESS_DENIED` → denied only if the captured NTSTATUS is `STATUS_ACCESS_DENIED` or none was captured (several unrelated statuses map to Win32 code 5); `ERROR_PIPE_BUSY` → busy; `ERROR_INVALID_FUNCTION`, `ERROR_NOT_SUPPORTED` → unsupported; anything else → error.
 
 ## Local versus remote differences to expect
 

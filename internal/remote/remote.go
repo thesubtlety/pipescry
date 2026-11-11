@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/jfjallid/go-smb/smb"
@@ -92,7 +93,8 @@ func (c *Collector) Close() {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		c.conn.Close()
+		// go-smb's Close also waits on the server; give up and let process
+		// exit tear down the TCP connection.
 	}
 }
 
@@ -186,27 +188,34 @@ func (c *Collector) createOpts(access uint32) *smb.CreateReqOpts {
 	return o
 }
 
-func (c *Collector) QuerySecurity(ctx context.Context, pipe string) ([]byte, *model.OpError) {
-	type res struct {
-		raw []byte
-		oe  *model.OpError
-	}
-	r, err := scanner.Call(ctx, func() (res, error) {
+func (c *Collector) QuerySecurity(ctx context.Context, pipe string) scanner.SDOutcome {
+	o, err := scanner.Call(ctx, func() (scanner.SDOutcome, error) {
 		f, err := c.conn.OpenFileExt(share, pipe, c.createOpts(scanner.SecurityQueryAccess))
 		if err != nil {
-			return res{oe: c.opError("open(READ_CONTROL)", pipe, err)}, nil
+			return scanner.SDOutcome{Err: c.opError("open(READ_CONTROL)", pipe, err)}, nil
 		}
-		defer f.CloseFile()
-		raw, err := c.querySecurityRaw(f)
-		if err != nil {
-			return res{oe: c.opError("query_info(SMB2_0_INFO_SECURITY)", pipe, err)}, nil
+		var out scanner.SDOutcome
+		if raw, err := c.querySecurityRaw(f); err != nil {
+			out.Err = c.opError("query_info(SMB2_0_INFO_SECURITY)", pipe, err)
+		} else {
+			out.Raw = raw
 		}
-		return res{raw: raw}, nil
+		out.Closed, out.CloseErr = c.closeFile(f, pipe)
+		return out, nil
 	})
 	if err != nil {
-		return nil, c.opError("query_security", pipe, err)
+		return scanner.SDOutcome{Err: c.opError("query_security", pipe, err)}
 	}
-	return r.raw, r.oe
+	return o
+}
+
+func (c *Collector) closeFile(f *smb.File, pipe string) (*bool, string) {
+	closed := true
+	if err := f.CloseFile(); err != nil {
+		closed = false
+		return &closed, fmt.Sprintf("close %s on \\\\%s\\%s: %v", pipe, c.opt.Host, share, err)
+	}
+	return &closed, ""
 }
 
 // querySecurityRaw issues QUERY_INFO itself because go-smb only returns the
@@ -276,18 +285,16 @@ func (c *Collector) OpenTest(ctx context.Context, pipe string, access uint32) sc
 		if err != nil {
 			oe := c.opError("open", pipe, err)
 			out := scanner.OpenOutcome{Result: model.ResultError, Status: oe.Status, Err: oe.Message}
-			if oe.Status != nil {
-				out.Result = model.ClassifyNTStatus(oe.Status.Code)
+			// OpenFileExt may reconnect the tree first; only the CREATE's
+			// own status says anything about the pipe.
+			var nt *smb.NTStatusError
+			if errors.As(err, &nt) && strings.HasPrefix(nt.Op, "Create") {
+				out.Result = model.ClassifyNTStatus(nt.Status)
 			}
 			return out, nil
 		}
 		out := scanner.OpenOutcome{Result: model.ResultAllowed, Status: model.NTStatus(0)}
-		closed := true
-		if cerr := f.CloseFile(); cerr != nil {
-			closed = false
-			out.CloseErr = fmt.Sprintf("close %s on \\\\%s\\%s: %v", pipe, c.opt.Host, share, cerr)
-		}
-		out.Closed = &closed
+		out.Closed, out.CloseErr = c.closeFile(f, pipe)
 		return out, nil
 	})
 	if err != nil {
