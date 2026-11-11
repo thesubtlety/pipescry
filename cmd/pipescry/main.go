@@ -102,7 +102,7 @@ type scanFlags struct {
 	passwordStdin, anonymous, local                                           bool
 	namesFile                                                                 string
 	names                                                                     listFlag
-	noEnumerate, accessTest                                                   bool
+	accessTest                                                                bool
 	timeout                                                                   time.Duration
 	concurrency                                                               int
 	jsonPath, format                                                          string
@@ -128,9 +128,8 @@ func scan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.StringVar(&f.ntHashEnv, "nt-hash-env", "", "read a hex NT hash from this environment variable instead of a password")
 	fs.BoolVar(&f.anonymous, "anonymous", false, "use an anonymous (null) NTLM session")
 	fs.BoolVar(&f.local, "local", false, "scan the local NPFS with Win32 APIs (Windows only)")
-	fs.StringVar(&f.namesFile, "names-file", "", "file with one pipe name per line; '#' starts a comment")
-	fs.Var(&f.names, "names", "comma-separated pipe names to scan; repeatable")
-	fs.BoolVar(&f.noEnumerate, "no-enumerate", false, "skip directory enumeration and scan only supplied names")
+	fs.StringVar(&f.namesFile, "names-file", "", "file with one pipe name per line to scan instead of enumerating; '#' starts a comment")
+	fs.Var(&f.names, "names", "comma-separated pipe names to scan instead of enumerating; repeatable")
 	fs.BoolVar(&f.accessTest, "access-test", false, "open and close each pipe separately with READ_CONTROL, FILE_READ_DATA, FILE_WRITE_DATA")
 	fs.DurationVar(&f.timeout, "timeout", 10*time.Second, "per-operation timeout; enumeration gets 6x")
 	fs.IntVar(&f.concurrency, "concurrency", 4, "pipes processed in parallel (1-64)")
@@ -185,10 +184,6 @@ Flags:
 			return exitUsage
 		}
 		names = append(names, more...)
-	}
-	if f.noEnumerate && len(names) == 0 {
-		fmt.Fprintln(stderr, "scan: --no-enumerate requires --names or --names-file")
-		return exitUsage
 	}
 
 	diag := func(format string, a ...any) {
@@ -246,7 +241,7 @@ Flags:
 	r := scanner.Run(ctx, col, scanner.Config{
 		Mode:        mode,
 		Version:     version,
-		Enumerate:   !f.noEnumerate,
+		Enumerate:   len(names) == 0,
 		Names:       names,
 		AccessTest:  f.accessTest,
 		Timeout:     f.timeout,

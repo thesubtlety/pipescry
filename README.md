@@ -69,9 +69,8 @@ pipescry.exe scan --local --access-test --json local.json --principal S-1-1-0 --
 | `--nt-hash HEX` | | 32-hex-character NT hash for pass-the-hash. Visible in process listings; prefer `--nt-hash-env`. |
 | `--nt-hash-env VAR` | | Read a 32-hex-character NT hash from an environment variable. |
 | `--anonymous` | | Anonymous NTLM session. |
-| `--names a,b` | | Pipe names to scan in addition to enumeration. Repeatable. |
-| `--names-file PATH` | | One name per line; `#` starts a comment. `\\.\pipe\x` and `\\host\pipe\x` forms are accepted. |
-| `--no-enumerate` | off | Skip the directory listing; requires `--names` or `--names-file`. |
+| `--names a,b` | | Scan only these pipes; skips enumeration. Repeatable. |
+| `--names-file PATH` | | Like `--names`, read from a file. One name per line; `#` starts a comment. `\\.\pipe\x` and `\\host\pipe\x` forms are accepted. |
 | `--access-test` | off | Open and close each pipe three times, requesting exactly `READ_CONTROL`, `FILE_READ_DATA`, and `FILE_WRITE_DATA`. |
 | `--timeout D` | 10s | Per-operation timeout. Enumeration uses 6x; connection setup 3x. |
 | `--concurrency N` | 4 | Pipes processed in parallel, 1–64. Remote mode shares one SMB session. |
@@ -109,7 +108,7 @@ Each pipe:
 
 | Field | Content |
 |---|---|
-| `name`, `sources` | `enumeration` and/or `names_list`. |
+| `name`, `sources` | `enumeration` or `names_list`. |
 | `current_instances`, `max_instances` | From the directory entry; `null` when not reported. |
 | `security.state` | `collected`, `unavailable` (server does not support the query), `failed`, or `unparsed`. |
 | `security.raw_hex` | Descriptor bytes as returned, when any were returned. |

@@ -39,7 +39,6 @@ func TestUsageErrors(t *testing.T) {
 		{"scan", "--local", "--format", "xml"},
 		{"scan", "--local", "--evidence", "acl"},
 		{"scan", "--local", "--permission", "NOPE"},
-		{"scan", "--local", "--no-enumerate"},
 		{"scan", "--local", "--timeout", "0s"},
 		{"scan", "--local", "--evidence", "dacl", "--result", "denied"},
 		{"scan", "--local", "--proxy", "socks5://h"},
