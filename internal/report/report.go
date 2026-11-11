@@ -125,7 +125,11 @@ func (p *printer) summary(r *model.Report) {
 			if ci == "" {
 				ci = "none"
 			}
-			p.f("%s SMB %s to %s:%d\\%s, signing %s, cipher negotiated %s\n", label("transport"), t.Dialect, t.Host, t.Port, t.Share, sign, ci)
+			via := ""
+			if t.Proxy != "" {
+				via = " via " + t.Proxy
+			}
+			p.f("%s SMB %s to %s:%d\\%s%s, signing %s, cipher negotiated %s\n", label("transport"), t.Dialect, t.Host, t.Port, t.Share, via, sign, ci)
 		default:
 			p.f("%s %s\n", label("transport"), t.Protocol)
 		}

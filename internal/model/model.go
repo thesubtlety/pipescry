@@ -67,6 +67,8 @@ type Transport struct {
 	// have no session key, so a negotiated cipher does not mean encryption is in use.
 	CipherNegotiated string `json:"cipher_negotiated,omitempty"`
 	Share            string `json:"share,omitempty"`
+	// Proxy is scheme://host:port, without credentials.
+	Proxy string `json:"proxy,omitempty"`
 }
 
 type ScanOptions struct {

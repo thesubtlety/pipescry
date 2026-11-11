@@ -30,6 +30,7 @@ type Options struct {
 	NTHash      []byte
 	Anonymous   bool
 	DialTimeout time.Duration
+	Proxy       *Proxy
 }
 
 type Collector struct {
@@ -68,6 +69,9 @@ func Connect(ctx context.Context, opt Options) (*Collector, error) {
 		Port:        opt.Port,
 		Initiator:   init,
 		DialTimeout: opt.DialTimeout,
+	}
+	if opt.Proxy != nil {
+		so.ProxyDialer = opt.Proxy
 	}
 	addr := fmt.Sprintf("%s:%d", opt.Host, opt.Port)
 	conn, err := scanner.Call(ctx, func() (*smb.Connection, error) { return smb.NewConnection(so) })
@@ -139,6 +143,9 @@ func (c *Collector) Transport() *model.Transport {
 		Dialect:         smb.DialectString(c.conn.Dialect()),
 		SigningRequired: &signing,
 		Share:           share,
+	}
+	if c.opt.Proxy != nil {
+		t.Proxy = c.opt.Proxy.String()
 	}
 	if ci := c.conn.Cipher(); ci != 0 {
 		t.CipherNegotiated = cipherNames[ci]

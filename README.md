@@ -39,6 +39,12 @@ pipescry scan --target 192.0.2.10 --username auditor --password-env PIPESCRY_PAS
   --names-file pipes.txt --access-test --result allowed
 ```
 
+Remote scan through a SOCKS pivot, with the target name resolved by the proxy:
+
+```
+pipescry scan --target dc01.corp.local --proxy socks5h://127.0.0.1:1080 --username CORP\\auditor --password-env PIPESCRY_PASS
+```
+
 Local scan on Windows, showing Everyone ACEs whose mask contains `FILE_WRITE_DATA` (allow or deny), plus NULL-DACL pipes:
 
 ```
@@ -53,6 +59,7 @@ pipescry.exe scan --local --access-test --json local.json --principal S-1-1-0 --
 |---|---|---|
 | `--target HOST` | | Scan `\\HOST\IPC$` over SMB2/3. |
 | `--port N` | 445 | SMB TCP port. |
+| `--proxy URL` | | SOCKS proxy: `socks4://[userid@]host[:port]`, `socks4a://`, `socks5://[user:pass@]host[:port]`, `socks5h://`. Port defaults to 1080. `socks4a` and `socks5h` send `--target` to the proxy unresolved; `socks4` and `socks5` resolve it locally first. Proxy credentials in the URL are visible in process listings. |
 | `--local` | | Scan the local NPFS. Windows only; other platforms exit with "local mode unsupported". |
 | `--username U` | | Account. `DOMAIN\user` and `user@domain` set the domain. |
 | `--domain D` | | Account domain. Empty or `.` authenticates as a local account on the target. |
@@ -92,7 +99,7 @@ Top level (`schema_version` `1.0`):
 |---|---|
 | `tool`, `mode`, `target`, `started_at`, `finished_at` | Run metadata. Times are UTC RFC 3339. |
 | `identity` | `name` (the requested account), `sid` (local only), `auth_method` (`ntlm`, `anonymous`, `process_token`), `anonymous`, `guest` (server mapped the session to Guest), `elevated` (local only). |
-| `transport` | Remote: dialect, `signing_required`, `cipher_negotiated`, share. Local: `{"protocol":"npfs"}`. |
+| `transport` | Remote: dialect, `signing_required`, `cipher_negotiated`, share, `proxy` (`scheme://host:port`, no credentials). Local: `{"protocol":"npfs"}`. |
 | `options` | Settings that affect what was collected. |
 | `collection` | `enumeration` (`complete`, `partial`, `failed`, `unsupported`, `skipped`), `enumeration_error`, pipe counts, `descriptors_by_state`, `tests_by_result`, `errors`, `warnings`. |
 | `pipes[]` | Sorted case-insensitively by name. |
@@ -124,6 +131,7 @@ Numeric fields keep the raw value; `*_hex` and name fields are derived from it.
 - Open tests reflect only the scanning identity.
 - SACLs and mandatory labels are not requested.
 - Only NTLM authentication is wired. Kerberos is not exposed.
+- DNS: the only lookup is for `--target` (and a proxy given by name), made by the local resolver unless `socks4a` or `socks5h` is used. NTLM itself does no DNS.
 - Not yet validated on real Windows. Under Wine, local descriptor collection works, but Wine lacks NPFS listing and pipe access checks. See `docs/testing.md` for the lab runbook.
 
 Implementation notes are in [`docs/`](docs/).

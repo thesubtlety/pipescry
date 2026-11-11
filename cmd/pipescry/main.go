@@ -97,18 +97,18 @@ func (l *listFlag) Set(v string) error {
 }
 
 type scanFlags struct {
-	target, username, domain, password, passwordEnv, hashEnv string
-	port                                                     int
-	passwordStdin, anonymous, local                          bool
-	namesFile                                                string
-	names                                                    listFlag
-	noEnumerate, accessTest                                  bool
-	timeout                                                  time.Duration
-	concurrency                                              int
-	jsonPath, format                                         string
-	summary, quiet, noColor, verbose                         bool
-	principals, permissions, results                         listFlag
-	evidence                                                 string
+	target, username, domain, password, passwordEnv, hashEnv, proxy string
+	port                                                            int
+	passwordStdin, anonymous, local                                 bool
+	namesFile                                                       string
+	names                                                           listFlag
+	noEnumerate, accessTest                                         bool
+	timeout                                                         time.Duration
+	concurrency                                                     int
+	jsonPath, format                                                string
+	summary, quiet, noColor, verbose                                bool
+	principals, permissions, results                                listFlag
+	evidence                                                        string
 }
 
 func scan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -118,6 +118,7 @@ func scan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	fs.StringVar(&f.target, "target", "", "remote host name or IP; scans \\\\host\\IPC$ over SMB2/3")
 	fs.IntVar(&f.port, "port", 445, "remote SMB TCP port")
+	fs.StringVar(&f.proxy, "proxy", "", "SOCKS proxy URL: socks4, socks4a, socks5, or socks5h://[user[:pass]@]host[:port]; the a/h forms resolve --target at the proxy")
 	fs.StringVar(&f.username, "username", "", "account name; accepts DOMAIN\\user or user@domain")
 	fs.StringVar(&f.domain, "domain", "", "account domain; empty or \".\" authenticates as a local account on the target")
 	fs.StringVar(&f.password, "password", "", "password; visible in process listings and shell history, prefer --password-env")
@@ -221,7 +222,11 @@ Flags:
 			fmt.Fprintf(stderr, "scan: %v\n", err)
 			return exitUsage
 		}
-		diag("connecting to %s:%d", f.target, f.port)
+		if opt.Proxy != nil {
+			diag("connecting to %s:%d via %s", f.target, f.port, opt.Proxy)
+		} else {
+			diag("connecting to %s:%d", f.target, f.port)
+		}
 		cctx, cancel := context.WithTimeout(ctx, f.timeout*3)
 		c, err := remote.Connect(cctx, opt)
 		cancel()
@@ -282,6 +287,8 @@ func validate(f *scanFlags) error {
 		return errors.New("one of --target or --local is required")
 	case f.local && (f.username != "" || f.anonymous || f.password != "" || f.passwordEnv != "" || f.hashEnv != "" || f.passwordStdin):
 		return errors.New("credential flags apply only to --target; --local uses the current process token")
+	case f.local && f.proxy != "":
+		return errors.New("--proxy applies only to --target")
 	case f.format != "text" && f.format != "json":
 		return fmt.Errorf("--format %q: want text or json", f.format)
 	case len(f.results) > 0 && strings.EqualFold(f.evidence, "dacl"):
@@ -298,6 +305,13 @@ func validate(f *scanFlags) error {
 
 func credentials(f *scanFlags, stdin io.Reader) (remote.Options, error) {
 	opt := remote.Options{Host: f.target, Port: f.port, Domain: f.domain, DialTimeout: f.timeout}
+	if f.proxy != "" {
+		p, err := remote.ParseProxy(f.proxy)
+		if err != nil {
+			return opt, fmt.Errorf("--proxy: %w", err)
+		}
+		opt.Proxy = p
+	}
 	if f.anonymous {
 		if f.username != "" || f.password != "" || f.passwordEnv != "" || f.hashEnv != "" || f.passwordStdin {
 			return opt, errors.New("--anonymous cannot be combined with credentials")

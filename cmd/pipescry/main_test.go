@@ -18,8 +18,8 @@ func runCLI(t *testing.T, stdin string, args ...string) (int, string, string) {
 func TestPasswordFlagNotEchoed(t *testing.T) {
 	// Port 1 refuses the connection, so this exercises the failure path.
 	code, out, stderr := runCLI(t, "", "scan", "--target", "127.0.0.1", "--port", "1", "--timeout", "2s",
-		"--username", "u", "--password", "s3cret-value", "--verbose")
-	if code != exitScan || strings.Contains(out+stderr, "s3cret-value") {
+		"--username", "u", "--password", "s3cret-value", "--verbose", "--proxy", "socks5h://pu:proxy-secret@127.0.0.1:1")
+	if code != exitScan || strings.Contains(out+stderr, "s3cret-value") || strings.Contains(out+stderr, "proxy-secret") {
 		t.Fatalf("code=%d output contains password or wrong code:\n%s%s", code, out, stderr)
 	}
 	f := scanFlags{target: "h", username: "u", password: "p", passwordEnv: "X"}
@@ -42,6 +42,8 @@ func TestUsageErrors(t *testing.T) {
 		{"scan", "--local", "--no-enumerate"},
 		{"scan", "--local", "--timeout", "0s"},
 		{"scan", "--local", "--evidence", "dacl", "--result", "denied"},
+		{"scan", "--local", "--proxy", "socks5://h"},
+		{"scan", "--target", "h", "--anonymous", "--proxy", "http://h:8080"},
 	}
 	for _, c := range cases {
 		if code, _, _ := runCLI(t, "", c...); code != exitUsage {
