@@ -1,0 +1,207 @@
+# pipescry — Implementation Specification
+
+## Goal
+
+Build a cross-platform CLI for investigating Windows named-pipe security. The tool runs remotely from Linux or Windows via SMB, or locally on Windows using native Windows APIs.
+
+**Language:** Go  
+**Dependencies:** Prefer `jfjallid/go-smb` and `golang.org/x/sys/windows`.  
+**Output:** Standalone executables, JSON findings, and readable terminal reports.
+
+## Target builds
+
+- Linux AMD64 — remote scanning
+- Linux ARM64 — remote scanning
+- Windows AMD64 — remote and local scanning
+- Windows ARM64 — remote and local scanning
+
+No Python, .NET, external SMB utilities, or installed agent required.
+
+## Architecture
+
+Use this directory structure:
+
+- `cmd/pipescry/` — CLI entry point
+- `internal/remote/` — SMB2/3 connections, pipe enumeration, remote security queries
+- `internal/local/` — Windows NPFS enumeration and Win32 APIs
+- `internal/security/` — Security descriptor and ACE analysis
+- `internal/scanner/` — Common scan orchestration and access tests
+- `internal/report/` — JSON and terminal output
+- `internal/model/` — Shared data structures
+
+Use Go build tags (`//go:build windows`) to isolate Windows-native code. Provide a non-Windows stub returning "local mode unsupported".
+
+## Required features
+
+**Remote mode**
+
+1. Authenticate using SMB2/3 against TCP 445.
+2. Connect to `IPC$`.
+3. Enumerate visible named pipes where supported.
+4. Allow a supplied pipe-name list when enumeration is incomplete or unavailable.
+5. Query pipe security descriptors using SMB2 `QUERY_INFO` with `SMB2_0_INFO_SECURITY`.
+6. Perform separate handle-open tests for `READ_CONTROL`, `FILE_READ_DATA`, and `FILE_WRITE_DATA`.
+7. Close all handles without transmitting application messages.
+
+**Local mode (Windows only)**
+
+1. Enumerate NPFS using `NtQueryDirectoryFile`.
+2. Open pipe handles using `CreateFileW`.
+3. Retrieve security descriptors using `GetSecurityInfo`.
+4. Perform separate access-open checks.
+5. Preserve raw Win32/NTSTATUS errors.
+
+**Security analysis**
+
+- Parse owner, group, raw DACL, SIDs, ACEs, and exact access masks.
+- Detect broad grants to Everyone, Authenticated Users, and BUILTIN\Users.
+- Highlight `WRITE_DAC`, `WRITE_OWNER`, Full Control, and `FILE_CREATE_PIPE_INSTANCE` (`0x4`).
+- Distinguish NULL DACL from empty DACL.
+- Do not interpret `FILE_APPEND_DATA` as ordinary message-write permission without considering the pipe-specific meaning.
+- Never infer confirmed exploitability from permissions alone.
+
+## CLI
+
+Examples:
+
+`pipescry scan --target 192.0.2.10 --username auditor --password-env pipescry_PASS --output report.json`
+
+`pipescry scan --local --output local.json`
+
+`pipescry scan --target 192.0.2.10 --names-file pipes.txt --access-test`
+
+Use non-interactive authentication options where possible. Do not expose passwords in command-line arguments or logs.
+
+## Output schema
+
+Each finding should include:
+
+- Target, pipe name, scan mode, timestamp
+- Authentication identity
+- Security descriptor and parsed ACEs, if available
+- Requested access and actual result for each test
+- Raw error/status codes
+- Risk indicators with supporting evidence
+- Enumeration completeness and unsupported-operation warnings
+
+Results must distinguish `allowed`, `denied`, `busy`, `error`, `unsupported`, and `not_tested`.
+
+## Safety and reliability
+
+- Read-only investigation by default.
+- Access tests only open and close handles; never send payloads.
+- Configurable timeouts and bounded concurrency.
+- No permission modification or pipe-instance creation.
+- Do not silently elevate privileges.
+- Preserve evidence when operations fail.
+
+## Build commands
+
+Build with `CGO_ENABLED=0`, using `GOOS` and `GOARCH`:
+
+- `GOOS=linux GOARCH=amd64`
+- `GOOS=linux GOARCH=arm64`
+- `GOOS=windows GOARCH=amd64`
+- `GOOS=windows GOARCH=arm64`
+
+Build each using `go build -o <output> ./cmd/pipescry`.
+
+Create `scripts/build.sh` to produce all four binaries in `dist/`. Windows binaries use `.exe`.
+
+## Development order
+
+1. **Feasibility spike:** Verify the selected SMB library supports named-pipe access, IPC$ enumeration, exact access masks, and SMB2 security queries. Implement missing operations in the transport layer if necessary.
+2. Implement the remote SMB scanner.
+3. Implement common security descriptor analysis and reporting.
+4. Add Windows-native local collection.
+5. Add cross-platform builds and automated tests.
+6. Validate against Windows lab targets and compare local versus remote findings.
+
+Do not implement protocol payload interaction in the MVP. Reserve a plugin interface for future explicitly enabled, protocol-specific interaction.
+
+## Definition of done
+
+- All four binaries compile.
+- Remote scanning runs from Linux without Windows dependencies.
+- Both Windows architectures support local and remote modes.
+- Raw DACL and access-open evidence is recorded accurately.
+- Failed operations are never reported as confirmed access denial without supporting evidence.
+- Tests include synthetic ACL fixtures and actual Windows integration tests.
+- Document limitations rather than inventing unsupported functionality.
+
+# PipeScry — Output, Filtering, and Documentation Requirements
+
+## CLI output
+
+- Default stdout: compact scan summary followed by pipe-grouped findings.
+- No risk, severity, vulnerability, or recommendation fields.
+- Report only observed facts and exact test results.
+- Show principal, ACE type, permissions, raw access mask, and evidence source.
+- Show requested access, tested identity, result, and raw status for open tests.
+- Preserve NULL DACL, empty DACL, unavailable, and failed-query distinctions.
+- Sort output deterministically.
+- Support `--summary`, `--quiet`, `--no-color`, and `--verbose`.
+- Send progress and diagnostics to stderr; structured data to stdout.
+- Disable terminal colors when stdout is not a TTY.
+
+## Filtering
+
+Implement:
+
+- `--principal <SID|name>` — match ACE trustee or tested identity, according to evidence type.
+- `--permission <right>` — match exact Windows rights after interpreting applicable generic access mappings.
+- `--evidence <all|dacl|open>` — select displayed evidence type.
+- `--result <allowed|denied|busy|error>` — filter access-test results.
+
+Use AND between different filter categories. Repeated values within a category use OR.
+
+Display filtering must happen after collection and must not affect JSON evidence or completeness metrics.
+
+## JSON
+
+- `--json <path>` writes the complete evidence document.
+- `--format json` writes the complete evidence document to stdout.
+- No text banners or progress messages in JSON stdout.
+- Include schema version, target, scan mode, timestamp, authentication identity, transport metadata, collection status, and errors.
+- Include every observed pipe, raw security descriptor when available, parsed ACEs, access masks, test requests, test outcomes, and NTSTATUS/Win32 errors.
+- Preserve raw values alongside decoded names.
+- Represent missing, unavailable, and not-tested states explicitly.
+- Never store authentication secrets.
+- Use stable field names and deterministic serialization.
+
+## Comments and documentation style
+
+All comments, README content, and documentation must be **direct, clear, terse, and technical**.
+
+Rules:
+
+- Explain *why*, not what obvious code does.
+- Document non-obvious Windows, NPFS, SMB, and ACL behavior.
+- State facts without interpretation or exaggeration.
+- Prefer short sentences and concrete terminology.
+- Avoid filler, marketing language, repetition, and generic introductions.
+- Do not describe unimplemented features as supported.
+- Do not add unnecessary comments, banners, emojis, or decorative prose.
+- Error messages must state the operation, target, and underlying failure.
+- CLI help must describe exact behavior and defaults.
+
+README structure:
+
+1. One-sentence purpose.
+2. Supported platforms.
+3. Build/install commands.
+4. Three practical usage examples.
+5. CLI flags.
+6. Output schema.
+7. Known limitations.
+
+Keep detailed implementation notes in `docs/`, not the README.
+
+## Acceptance criteria
+
+- Human-readable output remains useful without JSON.
+- ACL filters return matching records accurately.
+- Open-test evidence is distinguishable from DACL evidence.
+- Saved JSON always contains all collected evidence, regardless of display filters.
+- No subjective security classifications appear anywhere.
+- Documentation remains concise and consistent with actual behavior.
